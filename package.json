@@ -1,0 +1,40 @@
+{
+  "name": "dipdaemon",
+  "version": "0.1.0",
+  "description": "DipDaemon — Scan. Simulate. Trade. NSE trading research platform; foundation runs in observe mode with live orders disabled.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abhi150904/Dip-Daemon.git"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "calibrate": "tsx scripts/calibrate.ts",
+    "report": "tsx scripts/report.ts",
+    "gates": "tsx scripts/gates.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "test:safety": "tsx --test scripts/safety.test.ts scripts/lifecycle.test.ts",
+    "probe": "tsx scripts/probe.ts",
+    "replay": "tsx scripts/replay.ts",
+    "zerodha:login": "tsx scripts/zerodha-login.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ai": "7.0.105",
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.2",
+    "otplib": "^12.0.1",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

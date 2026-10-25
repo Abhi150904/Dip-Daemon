@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DipDaemon — Scan. Simulate. Trade.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="crt"></div>
+  <header>
+    <div class="brand">
+      <span class="prompt">&gt;</span> DIP<span class="dim">_</span>DAEMON<span class="cursor">▌</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="live" class="on">OBSERVE</button>
+      <button data-tab="sessions">SESSIONS</button>
+    </nav>
+    <div class="pills">
+      <span id="mode" class="pill"></span>
+      <span id="model" class="pill"></span>
+      <span id="session" class="pill"></span>
+      <span id="warm" class="pill"></span>
+      <span id="lat" class="pill dim"></span>
+      <span id="skip" class="pill dim"></span>
+      <span id="clock" class="pill dim mono"></span>
+    </div>
+    <form class="cap" id="capForm">
+      <label for="capital">CAPITAL ₹</label>
+      <input id="capital" class="mono" type="number" min="1000" step="1000" />
+      <button type="submit">SET</button>
+      <span id="capMsg" class="dim"></span>
+    </form>
+    <button id="jev" title="stop all Jev calls; stops, fills and 15:10 flatten keep running">PAUSE JEV</button>
+    <button id="wild" title="stage-1 conviction entries, several names per cycle, no re-entry cooldown">WILD</button>
+    <button class="kill" id="kill">KILL</button>
+    <button class="ghost" id="unkill" title="clear kill switch">RESUME</button>
+  </header>
+
+  <div id="replay" class="replay mono" hidden>
+    <span class="tag">REPLAY</span>
+    <span id="rpDate" class="bright"></span>
+    <span id="rpClock" class="bright"></span>
+    <button id="rpPlay">PAUSE</button>
+    <span class="dim">SPEED</span>
+    <span class="speeds" id="rpSpeeds"></span>
+    <div class="prog" id="rpProg" title="click to seek"><i></i></div>
+    <span id="rpPct" class="dim"></span>
+  </div>
+  <div id="regime" class="strip mono"></div>
+
+  <section id="sessions" class="panel sessions mono" data-title="SESSIONS" hidden>
+    <div class="dim" style="font-size:10.5px;letter-spacing:.1em;margin-bottom:4px">LIVE SESSIONS · one row per RESUME → KILL / halt / close</div>
+    <table id="liveSess" style="margin-bottom:14px">
+      <thead><tr><th>#</th><th>DATE</th><th>START</th><th>END</th><th>DUR</th><th>DECISIONS</th><th>TRADES</th><th>PNL</th><th>ENDED BY</th><th>NOTE</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="dim" style="font-size:10.5px;letter-spacing:.1em;margin-bottom:4px">REPLAYABLE DAYS · bars in the live DB; replay runs the real loop with simulated fills on its own port</div>
+    <div id="runningReplays"></div>
+    <table id="sessTable">
+      <thead><tr><th>DATE</th><th>BARS</th><th>SYMBOLS</th><th>LIVE TRADES</th><th>LIVE PNL</th><th>SPEED</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <div class="nums" id="nums"></div>
+
+  <main id="liveView">
+    <section class="panel chart" data-title="EQUITY CURVE">
+      <svg id="eq" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+      <div id="chartMeta" class="dim mono"></div>
+    </section>
+
+    <section class="panel" data-title="POSITIONS">
+      <div id="today" class="mono"></div>
+      <table id="pos" class="mono">
+        <thead><tr><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>LTP</th><th>STOP</th><th>SL</th><th>NOTIONAL</th><th>uPNL</th><th>THESIS</th><th>MFE</th><th>MIN</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="orders" class="mono dim"></div>
+    </section>
+
+    <section class="panel" data-title="JEV RANKING">
+      <div id="rank" class="mono"></div>
+    </section>
+
+    <section class="panel" data-title="TRADES">
+      <table id="trades" class="mono">
+        <thead><tr><th>T</th><th>LEG</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>PNL</th><th>HOLD</th><th>WHY</th><th>ATTR</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel" data-title="LOG">
+      <div id="log" class="mono log"></div>
+    </section>
+
+    <section class="panel wide" data-title="JEV DECISIONS">
+      <table id="decs" class="mono">
+        <thead><tr><th>T</th><th>STAGE</th><th>SYM</th><th>Q</th><th>A</th><th>P</th><th>CONF</th><th>MS</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
