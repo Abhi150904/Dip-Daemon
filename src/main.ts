@@ -4,6 +4,9 @@ import { createBroker } from "./broker.js";
 import { Engine } from "./engine.js";
 import { startServer } from "./server.js";
 import { alert } from "./alerts.js";
+import { existsSync } from "node:fs";
+import { db } from "./db.js";
+import { PaperExecutor } from "./executor/paper.js";
 
 installCrashHandler();
 
@@ -12,6 +15,12 @@ const client = createBroker(() => {
 });
 
 const engine = new Engine(client);
+const paper = cfg.tradingMode === "paper" ? new PaperExecutor(db, cfg.paper, () => engine.quotes, () => existsSync(cfg.killPath)) : undefined;
+engine.extraActiveTokens = () => paper ? [...new Set([...paper.positions().map(p => p.symbol), ...paper.orders().filter(o => o.status === "open").map(o => o.symbol)])]
+  .flatMap(symbol => {
+    const instrument = client.getInstrument(symbol);
+    return instrument ? [{ token: instrument.token, segment: instrument.segment, symbol }] : [];
+  }) : [];
 
 async function main(): Promise<void> {
   if (!brokerConfigured()) {
@@ -24,9 +33,9 @@ async function main(): Promise<void> {
       void alert("session", `startup failed ${e}`);
     }
   }
-  startServer(engine);
+  startServer(engine, undefined, cfg.port, paper);
   setInterval(() => {
-    void engine.tick().catch((e) => console.error("tick", e));
+    void engine.tick().then(() => paper?.tick()).catch((e) => console.error("tick", e));
   }, 2000);
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {

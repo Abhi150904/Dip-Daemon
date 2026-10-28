@@ -64,6 +64,8 @@ export class Engine {
   seeking = false;
   private fastBusy = false;
   private deciding = false;
+  dataSource: "broker" | "synthetic-fixtures" = "broker";
+  extraActiveTokens: () => { token: string; segment: string; symbol: string }[] = () => [];
 
   constructor(
     private client: Broker,
@@ -91,7 +93,7 @@ export class Engine {
   }
 
   activeTokens() {
-    const out: { token: string; segment: string; symbol: string }[] = [];
+    const out: { token: string; segment: string; symbol: string }[] = this.extraActiveTokens();
     for (const p of this.positions.values()) out.push({ token: p.token, segment: p.segment, symbol: p.symbol });
     for (const o of this.exec.orders.values()) out.push({ token: o.token, segment: o.segment, symbol: o.symbol });
     return out;
@@ -993,7 +995,8 @@ export class Engine {
     const capital = getCapital();
     const used = this.usedNotional();
     return {
-      mode: this.replay ? "replay" : this.canTrade ? "live" : "observe",
+      mode: this.replay ? "replay" : cfg.tradingMode,
+      dataSource: this.dataSource,
       optionsMode: cfg.optionsMode,
       model: this.model.name,
       broker: cfg.broker,

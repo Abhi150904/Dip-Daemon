@@ -5,10 +5,8 @@ import { parseTradingMode, requireSupportedMode } from "../src/execution-policy.
 test("execution modes default safely and unsupported modes fail closed", () => {
   assert.equal(parseTradingMode(undefined), "observe");
   requireSupportedMode(parseTradingMode(undefined));
-  for (const mode of ["paper", "live"] as const) {
-    assert.equal(parseTradingMode(mode), mode);
-    assert.throws(() => requireSupportedMode(mode), /disabled/);
-  }
+  requireSupportedMode(parseTradingMode("paper"));
+  assert.throws(() => requireSupportedMode(parseTradingMode("live")), /disabled/);
   for (const value of ["", "LIVE", "unknown"]) assert.throws(() => parseTradingMode(value), /TRADING_MODE/);
 });
 
@@ -25,11 +23,15 @@ test("both real broker clients reject every trading endpoint before network acce
   try {
     const { KotakClient } = await import("../src/kotak/client.js");
     const { ZerodhaClient } = await import("../src/zerodha/client.js");
+    const { cfg } = await import("../src/config.js");
     const order = { segment: "nse_cm", tradingSymbol: "INFY", side: "buy", qty: 1, price: 100, tag: "safety" } as const;
-    for (const client of [new KotakClient(), new ZerodhaClient()]) {
-      await assert.rejects(client.place(order), /mutations are disabled/);
-      await assert.rejects(client.modify({ ...order, orderId: "test-only" }), /mutations are disabled/);
-      await assert.rejects(client.cancel("test-only"), /mutations are disabled/);
+    for (const mode of ["observe", "paper"] as const) {
+      cfg.tradingMode = mode;
+      for (const client of [new KotakClient(), new ZerodhaClient()]) {
+        await assert.rejects(client.place(order), /mutations are disabled/);
+        await assert.rejects(client.modify({ ...order, orderId: "test-only" }), /mutations are disabled/);
+        await assert.rejects(client.cancel("test-only"), /mutations are disabled/);
+      }
     }
     assert.equal(calls, 0);
   } finally {

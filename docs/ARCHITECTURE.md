@@ -22,7 +22,7 @@ The two-second fast loop handles quotes, fills, stops, caps, and flattening. Ent
 
 Inherited startup instantiated `LiveExecutor` regardless of model. Entry methods checked `canTrade`, but reconciliation directly cancelled broker orders or flattened positions. Jev or `ALLOW_MOCK_TRADING=1` authorized entries. Phase 0 makes normal operation observe-only, skips reconciliation, and blocks mutations in both real clients. Live source remains for later review.
 
-## Contracts and coupling
+## Inherited contracts and coupling
 
 `Broker` combines session, instruments, quotes, candles, options, margin, order mutations, order reads, and position reads. `createBroker` selects Kotak or Zerodha. Market data and trading capabilities are coupled at this boundary.
 
@@ -30,11 +30,23 @@ Inherited startup instantiated `LiveExecutor` regardless of model. Entry methods
 
 `Engine.handleFill` owns position updates and stop placement. Executors persist fills before launching the asynchronous callback. Fill, position, and trade writes are not one atomic transaction. Pending orders and closed quantities are not fully reconstructed after restart. Paper accounting must commit before observers run.
 
-## SQLite
+## Inherited SQLite tables
 
 `src/db.ts` enables WAL and a three-second busy timeout, then runs `CREATE TABLE IF NOT EXISTS`. Tables: snapshots, bars_1m, decisions, rankings, orders, fills, trades, positions, governor_log, context, events, settings, sessions. Bars have a symbol/timestamp primary key; snapshots and decisions have time indexes. Money uses REAL. Fills have a simulated flag, but orders and positions lack account ownership.
 
-There is no versioned migration runner, wallet ledger, cash reservation, unique fill identity, or enforced foreign-key relationship in initialization DDL. The full strategy-to-risk-to-fill chain is not modeled. Paper changes must be additive; inherited records must not become wallet events implicitly.
+The inherited initialization DDL has no migration versions, wallet ledger, cash reservation, unique fill identity, or enforced foreign-key relationship. Phase 1 adds separate paper tables rather than reinterpreting these records.
+
+## Implemented Phase 1 boundary
+
+`src/portfolio/types.ts` validates paper settings and manual order inputs. `PaperWallet` receives an explicit SQLite connection, creates additive `paper_*` schema version 1 with foreign keys and uniqueness constraints, and derives cash from ledger postings. Pending-order rows and events provide durable cash/share reservations. `PaperExecutor` receives only that store, a read-only quote-map getter, settings, and a kill predicate. It has no broker reference.
+
+Submission, fill, cash posting, position update, and completed sale record use one immediate SQLite transaction. Recovery queries persisted orders and positions without broker-account reconciliation or a second initial deposit. Monetary fields are integer paise. Per-date equity baselines and loss halts persist in paper_days.
+
+PaperExecutor exposes the shared PlaceIntent through `place(intent & { idempotencyKey })`, plus validated manual `submit`, `modify`, `cancel`, `tick`, and account/read methods. It intentionally does not implement the legacy Executor's in-memory map and asynchronous onFill accounting callback. Reusing that callback would split a paper fill across transactions and duplicate Engine.handleFill mutations. Phase 2 must integrate signals through the paper intent method, not the legacy callback.
+
+`src/main.ts` constructs the paper service only for explicit paper mode, adds held/pending symbols to the quote feed, and ticks paper risk/fills after data updates. The scanner's execution remains observe-only. `src/api/paper.ts` provides local JSON account/order/journal APIs. Live broker guards are unconditional in both modes. `scripts/paper-demo.ts` provides an explicitly synthetic offline quote source, virtual clock, and isolated persistent demo account.
+
+Full assumptions and commands are in [Paper trading](PAPER_TRADING.md). The inherited replay simulator stays separate; candle input is not passed to the new quote-based fill policy.
 
 ## Replay
 
@@ -44,7 +56,7 @@ There is no versioned migration runner, wallet ledger, cash reservation, unique 
 
 Replay generally advances to minute start plus 59 seconds. Initial boot uses the first timestamp and can already expose that candle's full OHLC. Snapshot queries lack an upper clock bound. Same-candle entry/stop ordering and asynchronous fill callbacks need regression tests. The code has safeguards, but end-to-end no-look-ahead correctness is unproven.
 
-## Proposed Phase 1 design
+## Original design direction
 
 Keep a modular monolith and SQLite. Construct the market-data reader separately from the selected executor. Strategies emit validated signals and order intents independent of mode. An observe executor records decisions without creating orders. PaperExecutor depends on quotes and a paper store, never a trading-capable broker.
 
@@ -69,6 +81,6 @@ Persist client idempotency keys; reject reuse with different payloads. Reject un
 
 - Preserve feature engineering, model interface, engine, and replay instead of rewriting them.
 - Block mutations at broker boundaries because engine entry guards miss recovery paths.
-- Reject paper and live configuration until implemented and authorized respectively.
+- Permit explicit paper mode with the isolated account; reject live configuration until separately authorized and reviewed.
 - Retain SQLite; there is no demonstrated need for distributed storage or queues.
 - Defer frontend replacement until paper accounting and APIs pass offline tests.

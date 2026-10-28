@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
 import { parseTradingMode, requireSupportedMode } from "./execution-policy.js";
+import { paperSettings } from "./portfolio/types.js";
 
 loadEnv();
 
@@ -73,6 +74,7 @@ export const risk: RiskConfig = JSON.parse(readFileSync(riskPath, "utf8")) as Ri
 
 export const cfg = {
   tradingMode,
+  paper: paperSettings(process.env),
   broker: (str("BROKER", "kotak").toLowerCase() === "zerodha" ? "zerodha" : "kotak") as BrokerName,
   kotakAccessToken: str("KOTAK_ACCESS_TOKEN"),
   kotakMobile: str("KOTAK_MOBILE"),
@@ -118,6 +120,10 @@ export const cfg = {
   warmupDays: num("WARMUP_DAYS", 25),
   maxRequotes: num("MAX_REQUOTES", 3),
 };
+
+if (tradingMode === "paper" && !["127.0.0.1", "::1", "localhost"].includes(cfg.host)) {
+  throw new Error("Paper account controls require a loopback HOST until authentication is implemented");
+}
 
 /** Enough credentials for the selected broker to attempt a session. */
 export function brokerConfigured(): boolean {

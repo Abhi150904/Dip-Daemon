@@ -33,7 +33,7 @@ Other network operations include broker login/token exchange, instrument dumps, 
 ## Current execution policy
 
 - Missing TRADING_MODE defaults to observe, including when broker credentials exist.
-- Empty, misspelled, or unknown modes throw. Recognized paper/live values also throw because paper is unimplemented and live is deferred.
+- Empty, misspelled, or unknown modes throw. Paper is an explicit virtual-account opt-in; live still throws. Paper settings are validated and non-loopback paper startup is rejected.
 - ALLOW_MOCK_TRADING remains parsed for inherited compatibility but has no execution authority.
 - Replay requires an explicitly supplied executor. Real client mutation blocks remain active even if a caller incorrectly injects a live executor.
 - Observe does not reconcile, adopt, cancel, or flatten broker positions. This application is not protection for an existing real position.
@@ -41,7 +41,7 @@ Other network operations include broker login/token exchange, instrument dumps, 
 
 ## Accounting and research limitations
 
-SQLite initializes tables on import, without versioned migrations or wallet transactions. Fill callbacks are asynchronous; order/fill/position updates can diverge after a crash. Order identity, fill deduplication, cash reservations, and restart recovery are incomplete. REAL-valued money and sizing capital do not form a virtual account.
+The inherited SQLite tables initialize on import, without wallet transactions. Legacy fill callbacks are asynchronous and their order/fill/position updates can diverge after a crash. Phase 1 avoids that callback path: separate paper tables use integer-paise ledger accounting, immediate transactions, idempotency keys, unique fills and persistent reservations. Legacy REAL-valued records are not treated as a paper account.
 
 Cost constants are inherited, unversioned estimates, omit brokerage, and are not verified against current tariffs. Slippage is in some friction estimates but not replay fill prices. No current regulatory, tariff, historical-universe, or profitability claim is made by this audit. External verification belongs to later fee design and live compliance work.
 
@@ -74,7 +74,21 @@ The original smoke failure also triggered a second import error from its finally
 
 During test development, the first fixtures failed the strategy gates (excessive VWAP extension), and an assertion on lastSkipReason failed because the inherited WILD branch clears that display field after selecting candidates. Fixtures now describe a valid continuation, and tests assert the persisted observe event and selected candidate. The WILD display limitation remains; it does not authorize orders. The smoke fixture previously allowed zero size without failing; it now requires valid nonzero whole-share sizing and capital bounds.
 
-Phase 0 is Completed: source audit, documentation, narrow safety guards, native repair, and offline runtime baseline are verified. Phase 1 has not started. Not verified: dashboard/browser runtime, complete historical replay, external broker/model APIs, durable paper recovery/accounting, and production deployment. Existing real positions remain outside observe-mode management.
+Phase 0 is Completed: source audit, documentation, narrow safety guards, native repair, and offline runtime baseline are verified. Phase 1 manual paper-account delivery is described below. Not verified: dashboard/browser interaction, complete historical replay, external broker/model APIs, and production deployment. Existing real positions remain outside this application's management.
+
+## Phase 1 validation and limits
+
+The paper service has no broker reference and never calls legacy Engine.handleFill. Ledger postings, order status, fill identity, position cost and completed-trade accounting commit together. A triggered SQLite failure is tested to roll back all financial writes. Disk-reopen tests preserve reservations and account funding, apply one fill per order, close a recovered position, and recover completed trades without a second deposit.
+
+The suite covers market/limit orders, insufficient funds, quantity and order-value validation, pending price changes, modifications/cancellation, reserved shares, position caps, idempotency conflicts, stale/future/crossed data, fees/spread/slippage, stops, daily halts, kill, session flatten/expiry, and the shared PlaceIntent adapter. Both actual broker clients reject place/modify/cancel under observe and paper settings with zero fetch calls. Local HTTP tests execute buy/sell/account/journal requests and verify malformed inputs, missing orders, cross-origin mutation and oversized body responses. A separate offline demo process is booted and traded through HTTP, then stopped and its temporary database removed.
+
+Initial HTTP execution required localhost permission in the restricted runner. The first standalone demo test used the tsx CLI launcher and hit a Windows database lock during cleanup; the test now launches the actual Node server with `--import tsx`, waits for process exit, and releases the file. No real broker/model endpoint was used. Full verification commands are `pnpm typecheck`, `pnpm test`, and `pnpm smoke`.
+
+Final Phase 1 results on 26 October 2026: `pnpm typecheck` passed; `pnpm test` passed all 30 tests (22 top-level cases plus eight lifecycle subtests); `pnpm smoke` passed with the expected fixture candidate and whole-share size. `git diff --check` passed. The manual account/API, persistent restart, atomic rollback, and standalone synthetic demo acceptance checks all ran successfully.
+
+Paper weekday session checks do not include holidays. Full fills do not model liquidity or partial executions. Fee model research-flat-v1 is a dated combined estimate, not certified brokerage/tax itemization. Quote timestamps from inherited clients represent receipt time. Stale position marks make current equity/P&L unavailable; unfillable protective exits remain open exposure. The first valid valuation each IST date sets the durable daily equity baseline. A position carried because prices were unavailable uses the first valid next-day mark for that day's baseline. Account reset, multiuser authentication, full paper frontend, automatic strategy entries and historical replay integration are not implemented.
+
+Paper APIs enforce loopback remote address, local Host, browser Origin and a 16 KiB JSON limit. Paper mode also applies the local request guard to inherited mutation controls and rejects non-loopback HOST configuration. The synthetic demo blocks outgoing fetch entirely and labels its market source; it uses a separate persistent account. These controls support local development, not public deployment.
 
 ## Git and attribution
 

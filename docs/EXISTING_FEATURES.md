@@ -1,6 +1,6 @@
 # Existing feature inventory
 
-Source inspection on 26 October 2026. Implemented means code exists, not that external service behavior was exercised. See [validation evidence](SAFETY.md).
+Phase 0 source inventory on 26 October 2026, retained as the audit record. Phase 1 additions below supersede the original missing-paper list. Implemented means code exists, not that external service behavior was exercised. See [validation evidence](SAFETY.md).
 
 | Component | Implementation found | Disposition |
 | --- | --- | --- |
@@ -42,8 +42,16 @@ Source inspection on 26 October 2026. Implemented means code exists, not that ex
 
 No module or dependency was proven obsolete; none was removed. AI, RSS, and TOTP dependencies have callers. Live and replay executors duplicate order persistence, but merge that code only after the paper transaction boundary is defined. Node's built-in test runner with installed tsx suffices for Phase 0; no new dependency was added.
 
-## Missing paper behavior
+## Missing paper behavior at the Phase 0 baseline
 
 There is no PaperExecutor, account, cash/reservation ledger, durable idempotency key, paper configuration, or manual paper-order API. Capital is a sizing setting, not cash. REAL-valued trade P&L is not a reconciled wallet. SimExecutor pending state is in memory. Observe lifecycle isolation is now tested; paper recovery, duplicate fills, and stale quote execution remain unimplemented and untested.
 
 `PAPER_INITIAL_CAPITAL`, `PAPER_MAX_ORDER_VALUE`, `PAPER_MAX_POSITIONS`, and `PAPER_DAILY_LOSS_LIMIT` are not parsed. A standalone deterministic quantitative strategy, walk-forward evaluation, and benchmark comparison are missing. Replay and reporting do not satisfy Phase 4 acceptance criteria.
+
+## Phase 1 additions
+
+Validated paper settings, PaperExecutor, an integer-paise ledger, persistent reservations/orders/fills/positions/trades/day halts, manual order APIs, protective exits, and a synthetic offline demo are implemented. The new paper path does not depend on broker trading capabilities or legacy asynchronous fill callbacks. It accepts the shared PlaceIntent with a durable idempotency key. See [Paper trading](PAPER_TRADING.md).
+
+New files: `src/portfolio/types.ts`, `src/portfolio/wallet.ts`, `src/executor/paper.ts`, `src/api/paper.ts`, `scripts/paper.test.ts`, `scripts/paper-demo.ts`, and `docs/PAPER_TRADING.md`. Configuration, startup, data subscriptions, execution policy, server routes, test scripts, and documentation were updated. No dependency or inherited live/replay module was deleted.
+
+The manual paper MVP is validated with SQLite transactions, disk reopen, fault injection, quote fixtures, HTTP orders and a standalone demo. Phase 2 automatic strategies, Phase 3 frontend tickets, and Phase 4 replay/evaluation remain planned. Shorting, position increases, partial fills, holidays, and itemized broker fees are explicit limitations.

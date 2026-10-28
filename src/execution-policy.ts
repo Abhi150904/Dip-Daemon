@@ -7,8 +7,8 @@ export function parseTradingMode(value: string | undefined): TradingMode {
 }
 
 export function requireSupportedMode(mode: TradingMode): void {
-  if (mode !== "observe") {
-    throw new Error(`TRADING_MODE=${mode} is disabled: paper execution is not implemented and live execution is deferred`);
+  if (mode === "live") {
+    throw new Error("TRADING_MODE=live is disabled: live execution is deferred");
   }
 }
 

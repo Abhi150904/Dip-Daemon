@@ -25,20 +25,30 @@ import type { ReplayControl } from "./replay/control.js";
 import { ReplayManager } from "./replay/manager.js";
 import { barDayStart } from "./data/features.js";
 import { clock } from "./time.js";
+import type { PaperExecutor } from "./executor/paper.js";
+import { paperApi, requireLocalRequest } from "./api/paper.js";
 
 const clients = new Set<ServerResponse>();
 let replayCtl: ReplayControl | null = null;
 let manager: ReplayManager | null = null;
 
 /** Replay passes a getter because a backward seek rebuilds its Engine. */
-export function startServer(target: Engine | (() => Engine), replay?: ReplayControl, port = cfg.port): void {
+export function startServer(target: Engine | (() => Engine), replay?: ReplayControl, port = cfg.port, paper?: PaperExecutor) {
   const current = typeof target === "function" ? target : () => target;
   replayCtl = replay ?? null;
   manager = replay ? null : new ReplayManager();
   const server = createServer((req, res) => {
     const engine = current();
+    if (paper && req.method !== "GET") {
+      try { requireLocalRequest(req); }
+      catch { res.writeHead(403); res.end("Local same-origin request required"); return; }
+    }
     const url = new URL(req.url ?? "/", `http://${cfg.host}:${port}`);
-    if (url.pathname === "/api/state") return json(res, state(engine));
+    if (url.pathname.startsWith("/api/paper/")) { void paperApi(req, res, url.pathname, paper); return; }
+    if (url.pathname === "/api/health") return json(res, { ok: true, mode: paper ? "paper" : engine.snapshot().mode });
+    if (url.pathname === "/api/market/status") return json(res, { connected: !!engine.snapshot().session, quotes: engine.quotes.size, source: engine.dataSource, paper: !!paper });
+    if (url.pathname === "/api/market/stocks") return json(res, [...engine.quotes.values()]);
+    if (url.pathname === "/api/state") return json(res, { ...state(engine), paperAccount: paper?.account() });
     if (url.pathname === "/api/sessions" && manager) {
       return json(res, { live: listSessions(), sessions: manager.sessions(), running: manager.list() });
     }
@@ -121,9 +131,12 @@ export function startServer(target: Engine | (() => Engine), replay?: ReplayCont
     return staticFile(res, url.pathname);
   });
   server.listen(port, cfg.host, () => {
-    console.log(`Warren Duffer${replay ? ` REPLAY ${replay.date}` : ""} http://${cfg.host}:${port}`);
+    const address = server.address();
+    console.log(`DipDaemon${replay ? ` REPLAY ${replay.date}` : ""} http://${cfg.host}:${address && typeof address !== "string" ? address.port : port}`);
   });
-  setInterval(() => broadcast(current()), replay ? 500 : 2000);
+  const timer = setInterval(() => broadcast(current()), replay ? 500 : 2000);
+  server.on("close", () => clearInterval(timer));
+  return server;
 }
 
 function state(engine: Engine) {
