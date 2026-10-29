@@ -10,3 +10,4 @@ dist/
 *.db-shm
 kill.switch
 .DS_Store
+.impeccable/review/

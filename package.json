@@ -19,7 +19,7 @@
     "test:paper": "tsx --test scripts/paper.test.ts",
     "test:automation": "tsx --test scripts/automation.test.ts",
     "paper:demo": "tsx scripts/paper-demo.ts",
-    "test": "tsx --test scripts/safety.test.ts scripts/lifecycle.test.ts scripts/paper.test.ts scripts/automation.test.ts",
+    "test": "tsx --test scripts/safety.test.ts scripts/lifecycle.test.ts scripts/paper.test.ts scripts/automation.test.ts scripts/dashboard.test.js",
     "probe": "tsx scripts/probe.ts",
     "replay": "tsx scripts/replay.ts",
     "zerodha:login": "tsx scripts/zerodha-login.ts",

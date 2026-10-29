@@ -1,6 +1,6 @@
 # DipDaemon roadmap
 
-Updated 29 October 2026. Phases 0–2 are delivered on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
+Updated 29 October 2026. Phases 0–3 are delivered on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
 
 ## Phase status
 
@@ -9,7 +9,7 @@ Updated 29 October 2026. Phases 0–2 are delivered on main. Live execution stay
 | 0: audit and foundation | Completed | Source audit/docs, native SQLite repair, type check, safety/lifecycle suite, deterministic smoke |
 | 1: persistent paper trading | Completed (manual MVP) | Isolated wallet/executor, manual API buy/sell, fees/P&L, cash/share reservations, restart, fault rollback, risk exits, synthetic offline demo |
 | 2: automated AI paper trading | Completed (offline verified) | Deterministic/validated AI signals, approval/automatic paper entry and exit, scheduler, ownership, cooldowns, audit trail and failure tests; real provider not exercised |
-| 3: dashboard | Planned | Browser operates paper workflow through authoritative paper APIs |
+| 3: dashboard | Completed (local workflow) | Seven browser pages; manual orders/close/modify/cancel, signal approval and policy controls, journal, responsive QA and 57 passing tests; evaluation remains Phase 4 |
 | 4: evaluation | Planned | Two strategies compared with consistent assumptions and held-out data |
 | 5: reliability | Planned | Recoverable deployed service, health, backups, reconnect/monitoring, secrets and authentication |
 | 6: optional live trading | Blocked | Explicit authorization and independent reconciliation, execution, operational and compliance review |
@@ -55,7 +55,7 @@ Explicit MVP limits: one virtual account, whole-share full fills, no shorts/opti
 
 The service owns decisions and orchestration; PaperExecutor remains authoritative for money and account limits. It never calls legacy Engine.handleFill or real broker trading methods. Schema version 2 preserves balances and legacy manual holdings; only positions linked to accepted automation buy signals are strategy-managed. Model/provider errors, invalid market context, expired approvals, timeout and stale configuration revisions produce no strategy orders.
 
-The real Jev provider, current market data, profitability, historical evaluation, public hosting and frontend interaction remain unverified. The deterministic strategy and Jev adapter are exercised offline, including automatic and approved entry/exit. See [Automation](AUTOMATION.md).
+The real Jev provider, current market data, profitability, historical evaluation, public hosting remain unverified. Phase 3 browser interaction is verified with synthetic data. The deterministic strategy and Jev adapter are exercised offline, including automatic and approved entry/exit. See [Automation](AUTOMATION.md).
 
 Final Phase 2 verification on 29 October 2026: `pnpm typecheck`, all 54 `pnpm test` checks, `pnpm smoke` and `git diff --check` pass. No real order endpoint or model provider was called.
 
@@ -70,4 +70,4 @@ Final Phase 2 verification on 29 October 2026: `pnpm typecheck`, all 54 `pnpm te
 7. Offline tests: model error/timeout, rejected/duplicate signal, approval, cooldown, automatic entry/monitor/exit, persistent audit trail and broker isolation.
 8. Update documentation and mark Phase 2 complete only after the complete virtual strategy workflow is exercised.
 
-Next is Phase 3: connect the paper account, order ticket, signals/approval, strategy controls and journal to the browser before adding historical-evaluation views. Phase 4 expands replay integrity, benchmarks, portfolio equity metrics and out-of-sample evaluation. Phase 5 adds deployment safeguards before remote access. Phase 6 remains outside present authorization.
+Phase 3 connects the paper account, order ticket, signals/approval, strategy controls and journal to the browser. See [browser operation](DASHBOARD.md). Phase 4 expands replay integrity, benchmarks, portfolio equity metrics and out-of-sample evaluation. Phase 5 adds deployment safeguards before remote access. Phase 6 remains outside present authorization.

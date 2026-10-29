@@ -262,6 +262,17 @@ test("manual HTTP workflow, error statuses, origin protection and observe isolat
     const account: unknown = await (await fetch(`${url}/api/paper/account`)).json();
     assert.ok(account && typeof account === "object" && "cash" in account);
     assert.equal(account.cash, 1_005_000);
+    const dashboardResponse = await fetch(`${url}/api/dashboard`);
+    assert.equal(dashboardResponse.status, 200);
+    assert.equal(dashboardResponse.headers.get("cache-control"), "no-store");
+    const dashboard: unknown = await dashboardResponse.json();
+    assert.ok(dashboard && typeof dashboard === "object" && "account" in dashboard && "mode" in dashboard);
+    assert.equal(dashboard.mode, "paper");
+    assert.deepEqual(dashboard.account, account);
+    assert.equal((await fetch(`${url}/api/dashboard`, { headers: { Origin: "https://malicious.example" } })).status, 403);
+    for (const path of ["/", "/app.js", "/format.js", "/style.css", "/legacy.html", "/legacy.js", "/legacy.css"]) {
+      assert.equal((await fetch(`${url}${path}`)).status, 200, path);
+    }
     assert.equal((await send("/api/paper/orders", buy("invalid", 0))).status, 400);
     assert.equal((await send("/api/paper/orders", buy("cross-site"), "https://malicious.example")).status, 403);
     assert.equal((await send("/api/kill", {}, "https://malicious.example")).status, 403);
@@ -275,7 +286,12 @@ test("manual HTTP workflow, error statuses, origin protection and observe isolat
     const disabled = startServer(engine, undefined, 0);
     await once(disabled, "listening");
     const disabledAddress = disabled.address(); assert.ok(disabledAddress && typeof disabledAddress !== "string");
-    try { assert.equal((await fetch(`http://127.0.0.1:${disabledAddress.port}/api/paper/account`)).status, 409); }
+    try {
+      assert.equal((await fetch(`http://127.0.0.1:${disabledAddress.port}/api/paper/account`)).status, 409);
+      const observed: unknown = await (await fetch(`http://127.0.0.1:${disabledAddress.port}/api/dashboard`)).json();
+      assert.ok(observed && typeof observed === "object" && "account" in observed);
+      assert.equal(observed.account, null);
+    }
     finally {
       disabled.closeAllConnections();
       await new Promise<void>((resolve, reject) => disabled.close(error => error ? reject(error) : resolve()));

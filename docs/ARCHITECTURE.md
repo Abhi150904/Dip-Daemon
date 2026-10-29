@@ -62,6 +62,12 @@ The Phase 2 automation boundary is implemented in `src/automation/paper.ts`. It 
 
 The existing engine still runs its observe/replay paths and supplies market data/model interfaces. Strategy service construction and ticking are explicit in main and the synthetic demo; legacy asynchronous fill callbacks never mutate paper records. This keeps the market scanner reusable without coupling strategy automation to live broker capabilities. See [Automation](AUTOMATION.md) for rules and APIs.
 
+## Phase 3 browser boundary
+
+The local server serves the new workspace as native browser modules. `/api/dashboard` collects market context, paper account/positions/orders/trades, strategy signals/runs/events and recorded-session metadata in a SQLite transaction. It uses the existing loopback, Host and same-origin checks and returns `Cache-Control: no-store`. Observe/replay snapshots contain no paper account. No credential values are included.
+
+The browser polls while visible, formats integer paise as INR, preserves active inputs and keeps order request keys across ambiguous responses within the current page session. It submits intents to the existing paper and automation APIs; accounting, sizing, execution and risk remain on the backend. Disconnection disables actions and retains the last snapshot. The original dashboard is preserved at `/legacy.html`; historical performance evaluation remains Phase 4. See [browser operation](DASHBOARD.md).
+
 Keep a modular monolith and SQLite. Construct the market-data reader separately from the selected executor. Strategies emit validated signals and order intents independent of mode. An observe executor records decisions without creating orders. PaperExecutor depends on quotes and a paper store, never a trading-capable broker.
 
 ```text

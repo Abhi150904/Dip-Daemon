@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import { cfg } from "./config.js";
 import {
   computeStats,
+  db,
   getCapital,
   latencyP50,
   latencyP90,
@@ -23,10 +24,12 @@ import {
 import type { Engine } from "./engine.js";
 import type { ReplayControl } from "./replay/control.js";
 import { ReplayManager } from "./replay/manager.js";
-import { barDayStart } from "./data/features.js";
+import { barDayStart, buildFeatures } from "./data/features.js";
+import { NIFTY50 } from "./symbols.js";
 import { clock } from "./time.js";
 import type { PaperExecutor } from "./executor/paper.js";
-import { paperApi, requireLocalRequest } from "./api/paper.js";
+import { paperApi, requireLocalRequest, reply } from "./api/paper.js";
+import { PaperError } from "./portfolio/types.js";
 import type { PaperAutomation } from "./automation/paper.js";
 import { automationApi } from "./api/automation.js";
 
@@ -46,6 +49,22 @@ export function startServer(target: Engine | (() => Engine), replay?: ReplayCont
       catch { res.writeHead(403); res.end("Local same-origin request required"); return; }
     }
     const url = new URL(req.url ?? "/", `http://${cfg.host}:${port}`);
+    if (url.pathname === "/api/dashboard" && req.method === "GET") {
+      try {
+        requireLocalRequest(req);
+        const collect = () => {
+          const snapshot = engine.snapshot();
+          return { now: clock.now(), mode: paper ? "paper" : snapshot.mode, source: engine.dataSource,
+            market: { connected: snapshot.session, warmedUp: snapshot.warmedUp, universe: NIFTY50, broker: cfg.broker, model: cfg.model,
+              quotes: [...engine.quotes.values()].map(q => { const f = buildFeatures(q.symbol, q); return { ...q, atrPercent: f && q.ltp ? f.atr1m / q.ltp * 100 : null, rvol: f?.volume.rvol20d ?? null }; }) },
+            account: paper?.account() ?? null, positions: paper?.positions() ?? [], orders: paper?.orders() ?? [], trades: paper?.trades() ?? [],
+            automation: automation?.status() ?? null, signals: automation?.signals() ?? [], runs: automation?.runs() ?? [],
+            events: paper?.events() ?? [], strategyEvents: automation?.events() ?? [],
+            history: manager?.sessions() ?? [], killed: snapshot.killed, replay: replayCtl?.state() ?? null };
+        };
+        return reply(res, 200, (paper?.wallet.db ?? db).transaction(collect).immediate());
+      } catch (error) { return reply(res, error instanceof PaperError ? error.status : 500, { error: error instanceof PaperError ? error.message : "Dashboard snapshot unavailable" }); }
+    }
     if (url.pathname.startsWith("/api/automation/") || url.pathname === "/api/signals" || url.pathname.startsWith("/api/signals/") || url.pathname === "/api/strategies") {
       void automationApi(req, res, url.pathname, automation); return;
     }
