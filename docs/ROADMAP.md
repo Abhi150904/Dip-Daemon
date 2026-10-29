@@ -1,6 +1,6 @@
 # DipDaemon roadmap
 
-Updated 29 October 2026. Phases 0–3 are delivered on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
+Updated 29 October 2026. Phases 0–4 are delivered as local, offline-verified workflows on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
 
 ## Phase status
 
@@ -10,7 +10,7 @@ Updated 29 October 2026. Phases 0–3 are delivered on main. Live execution stay
 | 1: persistent paper trading | Completed (manual MVP) | Isolated wallet/executor, manual API buy/sell, fees/P&L, cash/share reservations, restart, fault rollback, risk exits, synthetic offline demo |
 | 2: automated AI paper trading | Completed (offline verified) | Deterministic/validated AI signals, approval/automatic paper entry and exit, scheduler, ownership, cooldowns, audit trail and failure tests; real provider not exercised |
 | 3: dashboard | Completed (local workflow) | Seven browser pages; manual orders/close/modify/cancel, signal approval and policy controls, journal, responsive QA and 57 passing tests; evaluation remains Phase 4 |
-| 4: evaluation | Planned | Two strategies compared with consistent assumptions and held-out data |
+| 4: evaluation | Completed (offline workflow) | VWAP/session benchmark, recorded-AI archive replay, full-session/universe validation, isolated worker, saved runs, metrics and separate holdout; real historical provenance unverified |
 | 5: reliability | Planned | Recoverable deployed service, health, backups, reconnect/monitoring, secrets and authentication |
 | 6: optional live trading | Blocked | Explicit authorization and independent reconciliation, execution, operational and compliance review |
 
@@ -71,3 +71,9 @@ Final Phase 2 verification on 29 October 2026: `pnpm typecheck`, all 54 `pnpm te
 8. Update documentation and mark Phase 2 complete only after the complete virtual strategy workflow is exercised.
 
 Phase 3 connects the paper account, order ticket, signals/approval, strategy controls and journal to the browser. See [browser operation](DASHBOARD.md). Phase 4 expands replay integrity, benchmarks, portfolio equity metrics and out-of-sample evaluation. Phase 5 adds deployment safeguards before remote access. Phase 6 remains outside present authorization.
+
+## Phase 4 delivery
+
+`src/backtest/` validates immutable datasets, runs a causal next-open intraday evaluator and persists independent results. A bounded worker protects the running paper loop. `src/api/backtest.ts` provides local imports, cache capture and saved comparisons. `web/backtests.js` replaces the placeholder with configuration, separate in-sample/holdout results, equity/ledger views and JSON export. The existing completed-bar VWAP signal implementation is reused; legacy interactive replay is preserved but its candle-timing assumptions are not reused for evaluation.
+
+See [evaluation operation and limitations](BACKTESTING.md). Real historical membership, adjustments and provider/model authenticity require independent evidence. Next is Phase 5 reliability; live trading remains outside authorization.

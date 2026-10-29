@@ -1,6 +1,7 @@
+import { mountBacktests } from './backtests.js';
 import { escapeHtml as e, money, number, time, tone, riskStatus } from './format.js';
 const $ = id => document.getElementById(id);
-const pages = { overview: ['Overview', 'Your account, risk and latest strategy decisions.'], scanner: ['Market Scanner', 'Nifty 50 prices, candidates and signal reasons.'], trading: ['Paper Trading', 'Place virtual orders and manage your positions.'], strategies: ['Strategies', 'Configure automation and review each decision.'], journal: ['Trade Journal', 'Closed trades, costs and the reasons behind them.'], backtesting: ['Backtesting', 'Strategy evaluation is planned for Phase 4.'], settings: ['Settings', 'Account limits, data configuration and system activity.'] };
+const pages = { overview: ['Overview', 'Your account, risk and latest strategy decisions.'], scanner: ['Market Scanner', 'Nifty 50 prices, candidates and signal reasons.'], trading: ['Paper Trading', 'Place virtual orders and manage your positions.'], strategies: ['Strategies', 'Configure automation and review each decision.'], journal: ['Trade Journal', 'Closed trades, costs and the reasons behind them.'], backtesting: ['Backtesting', 'Compare repeatable simulations and inspect separate holdout results.'], settings: ['Settings', 'Account limits, data configuration and system activity.'] };
 let data, page, offline = true, fetching = false, busy = false, prefill;
 const keys = new Map();
 const badge = value => `<span class="badge ${e(value)}">${e(value)}</span>`;
@@ -75,7 +76,7 @@ function skeleton() {
         case 'scanner': return panel('Nifty 50 universe', '<div class="toolbar"><input id="search" type="search" aria-label="Search symbols" placeholder="Search symbols…"><label class="checkbox-label"><input id="quoted" type="checkbox">With quotes only</label><span id="quote-count" class="muted"></span></div><div id="scanner"></div>');
         case 'strategies': return `<div class="equal-grid">${policy()}${panel('How execution works', '<ul class="rule-list panel-body"><li><strong>Off</strong>Scans record research signals without placing orders.</li><li><strong>Approval required</strong>Review fresh signals and approve each virtual order.</li><li><strong>Automatic paper orders</strong>Eligible signals execute within account risk limits.</li><li><strong>Stop conditions</strong>Stale quotes, risk halts and emergency stop block new buys. Stops and time-based exits remain backend responsibilities.</li></ul>')}</div>${panel('Signal review', '<div id="signals"></div>')}${panel('Evaluation history', '<div id="runs"></div>')}`;
         case 'journal': return panel('Closed trades', '<div class="toolbar"><input id="search" type="search" aria-label="Search trade journal" placeholder="Search symbols or reasons…"><span class="muted" id="journal-total"></span></div><div id="trades"></div>');
-        case 'backtesting': return panel('Repeatable strategy evaluation', '<div class="backtest-intro"><h2>Build evidence before trusting a strategy.</h2><p>Phase 4 will add historical date selection, strategy comparisons, starting capital, equity curves, drawdown, win rate and profit factor. These results are not available yet.</p><p>The existing replay tools remain available for inspecting recorded sessions.</p><a class="button secondary section-gap" href="/legacy.html">Open legacy replay tools</a><div>' + badge('Phase 4 · planned') + '</div></div>') + panel('Recorded sessions', '<div id="history"></div>');
+        case 'backtesting': return '<div id="backtests-root"></div>';
         case 'settings': return `<div class="equal-grid">${panel('Paper account & limits', '<div id="limits" class="panel-body"></div>')}${panel('Data & model', '<div id="configuration" class="panel-body"></div>')}</div>${panel('Strategy risk parameters', `<form id="advanced" data-policy class="panel-body"><div class="form-grid">${[['momentumBps', 'Minimum momentum · bps', 1, 100, 1], ['minVolumeRatio', 'Minimum volume ratio', .1, 10, .1], ['stopAtrMult', 'Stop ATR multiplier', .1, 10, .1], ['maxStopBps', 'Maximum stop distance · bps', 10, 500, 1], ['maxPriceDriftBps', 'Maximum entry drift · bps', 1, 500, 1], ['maxHoldMinutes', 'Maximum hold · minutes', 1, 360, 1], ['modelTimeoutMs', 'Model timeout · milliseconds', 10, 60000, 1]].map(([n, l, min, max, step]) => field(n, l, 'number', `min="${min}" max="${max}" step="${step}" required`)).join('')}</div><div class="form-actions"><button data-account class="button primary">Save strategy parameters</button></div></form>`)}${panel('System activity', '<div id="activity"></div>')}`;
     }
 }
@@ -92,6 +93,7 @@ function route() {
     $('view').addEventListener('input', onInput);
     window.scrollTo(0, 0);
     render();
+    if (page === 'backtesting') mountBacktests($('backtests-root'), { request });
 }
 function onInput(event) { if (event.target.form?.hasAttribute('data-policy'))
     event.target.form.dataset.dirty = 'true'; if (event.target.closest('#ticket'))
@@ -158,8 +160,6 @@ function renderContent() {
         slot('limits', s ? pairs([['Starting capital', money(s.initialCapital)], ['Max order value', money(s.maxOrderValue)], ['Max positions', number(s.maxPositions)], ['Daily loss limit', money(s.dailyLossLimit)], ['Quote age limit', number(s.quoteMaxAgeMs / 1000) + ' seconds'], ['Slippage', number(s.slippageBps) + ' bps'], ['Fallback spread', number(s.fallbackSpreadBps) + ' bps'], ['Estimated fee', number(s.feeBps) + ' bps'], ['Fee effective from', e(s.feeEffectiveFrom)]]) + '<p class="ticket-note">Account limits are set on server startup. Fees are estimates, not broker contract-note charges.</p>' : empty('No paper account in this mode.'));
         slot('configuration', pairs([['Data source', e(data.source)], ['Broker', data.source === 'synthetic-fixtures' ? 'Synthetic demo · no broker access' : e(data.market.broker)], ['Model', e(data.market.model)], ['Scan interval', number(data.automation?.settings.scanIntervalS) + ' seconds'], ['Last scan', time(data.automation?.lastScan, true)], ['Data clock', time(data.now, true)], ['Health', offline ? 'Disconnected' : 'Dashboard connected']]) + '<p class="ticket-note">Provider and model credentials are configured on the server. No secrets are shown or stored in this interface.</p>');
     }
-    if (page === 'backtesting')
-        slot('history', table(['Date', 'Recorded bars', 'Symbols'], data.history.map(s => [e(s.date), number(s.bars), number(s.symbols)]), 'No replayable sessions recorded yet.'));
     controls();
 }
 function chart() {

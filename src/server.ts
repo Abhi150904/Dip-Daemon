@@ -32,6 +32,8 @@ import { paperApi, requireLocalRequest, reply } from "./api/paper.js";
 import { PaperError } from "./portfolio/types.js";
 import type { PaperAutomation } from "./automation/paper.js";
 import { automationApi } from "./api/automation.js";
+import { Backtests } from "./backtest/store.js";
+import { backtestApi } from "./api/backtest.js";
 
 const clients = new Set<ServerResponse>();
 let replayCtl: ReplayControl | null = null;
@@ -39,6 +41,7 @@ let manager: ReplayManager | null = null;
 
 /** Replay passes a getter because a backward seek rebuilds its Engine. */
 export function startServer(target: Engine | (() => Engine), replay?: ReplayControl, port = cfg.port, paper?: PaperExecutor, automation?: PaperAutomation) {
+  const backtests = new Backtests(db);
   const current = typeof target === "function" ? target : () => target;
   replayCtl = replay ?? null;
   manager = replay ? null : new ReplayManager();
@@ -49,6 +52,9 @@ export function startServer(target: Engine | (() => Engine), replay?: ReplayCont
       catch { res.writeHead(403); res.end("Local same-origin request required"); return; }
     }
     const url = new URL(req.url ?? "/", `http://${cfg.host}:${port}`);
+    if (url.pathname === "/api/backtests" || url.pathname.startsWith("/api/backtests/")) {
+      void backtestApi(req, res, url.pathname, backtests, engine.dataSource); return;
+    }
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
       try {
         requireLocalRequest(req);

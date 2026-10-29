@@ -33,7 +33,7 @@ Account stops remain active independently of automation policy. **Emergency stop
 - **Overview:** account values, cumulative closed-trade net result, positions, risk and recent decisions.
 - **Market Scanner:** configured Nifty 50 universe, quotes, changes, volume, ATR, relative volume, latest signal score and reasons. Rank is by latest recorded signal score among quoted symbols; it is not a validated performance ranking. Search a symbol and choose **Trade** to prefill the ticket.
 - **Settings:** account limits, provider/model identity, scan frequency, strategy risk parameters and audit details. Account limits and credentials remain server configuration. The browser never receives credentials.
-- **Backtesting:** Phase 4 status and recorded session dates. Historical evaluation, comparisons and performance metrics are not implemented. Use **Legacy dashboard & replay** for the existing replay tools.
+- **Backtesting:** dataset selection/import, strategy comparison, separate holdout results, equity curves, metrics, trade ledger and saved/exported evaluations. See [Backtesting](BACKTESTING.md). **Legacy dashboard & replay** preserves the earlier tools.
 
 Polling refreshes every three seconds while the tab is visible. It preserves an active ticket, edited configuration and focused table controls. Connection failure retains the last snapshot and disables actions until a successful refresh. If a submission response is interrupted, refresh and retry the unchanged ticket: its idempotency key is retained for the current page session. Reloading the page discards that key, so inspect order history before placing another order after a reload.
 

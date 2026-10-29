@@ -94,3 +94,11 @@ Persist client idempotency keys; reject reuse with different payloads. Reject un
 - Permit explicit paper mode with the isolated account; reject live configuration until separately authorized and reviewed.
 - Retain SQLite; there is no demonstrated need for distributed storage or queues.
 - Defer frontend replacement until paper accounting and APIs pass offline tests.
+
+## Phase 4 evaluation boundary
+
+`Backtests` owns additive `backtest_datasets` and `backtest_runs` tables in the configured database. Explicit dataset dates/symbols are checked before execution, preventing missing whole members or sessions from silently changing the tested universe. JSON imports and local-cache capture freeze raw bars and declared provenance under a content hash.
+
+The evaluator reuses the existing completed-bar VWAP signal implementation and historical `Bar` shape, but deliberately does not reuse legacy SimBroker candle timestamps or global-clock replay. Its portfolio, histories and pending intents are local values; next-open execution and conservative stop-gap behavior are explicit. Independent in-sample and holdout portfolios produce metric/equity/trade records with a full configuration fingerprint. A single bounded worker performs CPU work, with no Engine, broker, model provider, paper wallet or global database imported in that worker. The server remains available for paper ticks; only complete successful results are persisted.
+
+`src/api/backtest.ts` exposes same-origin local import/run/result routes. `web/backtests.js` mounts into the existing hash route and displays immutable results apart from the operating paper account strip. Real historical provenance and model pretraining leakage remain external validation responsibilities; see [Backtesting](BACKTESTING.md).

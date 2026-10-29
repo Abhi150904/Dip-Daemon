@@ -269,6 +269,15 @@ test("manual HTTP workflow, error statuses, origin protection and observe isolat
     assert.ok(dashboard && typeof dashboard === "object" && "account" in dashboard && "mode" in dashboard);
     assert.equal(dashboard.mode, "paper");
     assert.deepEqual(dashboard.account, account);
+    const evaluationDemo: unknown = await (await send("/api/backtests/demo", {})).json();
+    assert.ok(evaluationDemo && typeof evaluationDemo === "object" && "id" in evaluationDemo && typeof evaluationDemo.id === "string");
+    assert.equal((await fetch(`${url}/api/backtests`)).status, 200);
+    const evaluation = await send("/api/backtests/run", { datasetId: evaluationDemo.id, startDate: "2026-10-19", endDate: "2026-10-22", holdoutDate: "2026-10-21", strategies: ["vwap_momentum", "session_hold"], initialCapital: 10000, maxOrderValue: 1000, maxPositions: 3, dailyLossLimit: 300, feeBps: 5, spreadBps: 5, slippageBps: 2, participation: .01 });
+    assert.equal(evaluation.status, 200);
+    assert.deepEqual(await (await fetch(`${url}/api/paper/account`)).json(), account);
+    assert.equal((await send("/api/backtests/demo", {}, "https://malicious.example")).status, 403);
+    assert.equal((await fetch(`${url}/api/backtests`, { headers: { Origin: "https://malicious.example" } })).status, 403);
+    assert.equal((await send("/api/backtests/run", { datasetId: "missing" })).status, 404);
     assert.equal((await fetch(`${url}/api/dashboard`, { headers: { Origin: "https://malicious.example" } })).status, 403);
     for (const path of ["/", "/app.js", "/format.js", "/style.css", "/legacy.html", "/legacy.js", "/legacy.css"]) {
       assert.equal((await fetch(`${url}${path}`)).status, 200, path);

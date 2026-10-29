@@ -28,7 +28,7 @@ DipDaemon branding, restrained dark trading-terminal aesthetic, dense readable f
 
 ## Evidence on Hand
 
-docs/ARCHITECTURE.md, docs/PAPER_TRADING.md, docs/AUTOMATION.md and the offline integration suite. No validated profitability claim or completed historical evaluation backend exists.
+docs/ARCHITECTURE.md, docs/PAPER_TRADING.md, docs/AUTOMATION.md and the offline integration suite. Local historical-bar evaluation and a separate holdout workflow now exist; real source/model provenance and profitability remain unverified.
 
 ## Product Principles
 
@@ -36,7 +36,7 @@ docs/ARCHITECTURE.md, docs/PAPER_TRADING.md, docs/AUTOMATION.md and the offline 
 - Make order consequences and rejection reasons visible.
 - Keep simulated, observe and market-data states explicit.
 - Connect every actionable control to an existing validated API.
-- Present Phase 4 backtesting as unavailable rather than inventing results.
+- Evaluate frozen declared datasets with explicit fill assumptions, separate holdout results and truthful synthetic labeling.
 
 ## Accessibility & Inclusion
 

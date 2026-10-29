@@ -6,14 +6,14 @@ export function reply(res: ServerResponse, status: number, body: unknown): void 
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 }
-export async function body(req: IncomingMessage): Promise<unknown> {
+export async function body(req: IncomingMessage, maxBytes = 16384): Promise<unknown> {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new PaperError("Use application/json", 415);
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += bytes.length;
-    if (size > 16384) { req.resume(); throw new PaperError("Request body too large", 413); }
+    if (size > maxBytes) { req.resume(); throw new PaperError("Request body too large", 413); }
     chunks.push(bytes);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
