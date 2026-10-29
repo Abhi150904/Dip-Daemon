@@ -54,4 +54,10 @@ Validated paper settings, PaperExecutor, an integer-paise ledger, persistent res
 
 New files: `src/portfolio/types.ts`, `src/portfolio/wallet.ts`, `src/executor/paper.ts`, `src/api/paper.ts`, `scripts/paper.test.ts`, `scripts/paper-demo.ts`, and `docs/PAPER_TRADING.md`. Configuration, startup, data subscriptions, execution policy, server routes, test scripts, and documentation were updated. No dependency or inherited live/replay module was deleted.
 
-The manual paper MVP is validated with SQLite transactions, disk reopen, fault injection, quote fixtures, HTTP orders and a standalone demo. Phase 2 automatic strategies, Phase 3 frontend tickets, and Phase 4 replay/evaluation remain planned. Shorting, position increases, partial fills, holidays, and itemized broker fees are explicit limitations.
+The manual paper MVP is validated with SQLite transactions, disk reopen, fault injection, quote fixtures, HTTP orders and a standalone demo. Phase 2 strategy automation is now implemented below. Phase 3 frontend tickets and Phase 4 replay/evaluation remain planned. Shorting, position increases, partial fills, holidays, and itemized broker fees are explicit limitations.
+
+## Phase 2 additions
+
+The deterministic VWAP/momentum strategy, validated Jev two-stage/position adapter, typed signals, approval/automatic modes, scheduler, persistent run/signal/risk/order trace, cooldowns, deduplication and owned-position exits are implemented. Startup strategy execution is off unless explicitly configured for paper; the demo always starts off. Provider failures, invalid responses, expired approvals and late/stale results cannot create strategy orders.
+
+New files are `src/strategy/signals.ts`, `src/strategy/ai-paper.ts`, `src/model/validation.ts`, `src/automation/paper.ts`, `src/api/automation.ts`, `scripts/automation.test.ts` and `docs/AUTOMATION.md`. Existing ranking, model, executor, storage, startup, server, demo and regression tests were extended without new dependencies or removal of live/replay source. The deleted `.env.example` was not recreated, and private `.env` was not edited. The real Jev provider and broker APIs remain externally unverified; offline adapters and the synthetic demo cover the accepted strategy workflow.

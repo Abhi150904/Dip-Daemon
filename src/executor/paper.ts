@@ -42,6 +42,10 @@ export class PaperExecutor {
     if (!Number.isSafeInteger(rounded) || rounded <= 0) throw new PaperError("Invalid execution price");
     return rounded;
   }
+  preview(symbol: string, side: "buy" | "sell") {
+    const quote = this.quote(symbol);
+    return { pricePaise: this.executionPrice(quote, side), quoteTs: quote.ts };
+  }
   private mark(): void {
     for (const p of this.wallet.positions()) {
       try {
@@ -107,7 +111,7 @@ export class PaperExecutor {
     return row;
   }
 
-  place(intent: PlaceIntent & { idempotencyKey: string }): PaperOrder {
+  place(intent: PlaceIntent & { idempotencyKey: string }, reason = "manual"): PaperOrder {
     if (intent.leg !== "equity" || intent.segment !== "nse_cm" || intent.kind === "stop" ||
       (intent.kind === "entry" ? intent.side !== "buy" : intent.side !== "sell")) {
       throw new PaperError("Paper intents support long-only cash entries/exits; attach stop to the entry");
@@ -115,7 +119,7 @@ export class PaperExecutor {
     return this.submit({ idempotencyKey: intent.idempotencyKey, symbol: intent.symbol, side: intent.side,
       qty: intent.qty, type: intent.tif === "MKT" ? "market" : "limit",
       ...(intent.tif === "MKT" ? {} : { limitPrice: intent.price }),
-      ...(intent.kind === "entry" && intent.stop !== undefined ? { stopLoss: intent.stop } : {}) });
+      ...(intent.kind === "entry" && intent.stop !== undefined ? { stopLoss: intent.stop } : {}) }, reason);
   }
 
   submit(raw: unknown, reason = "manual"): PaperOrder {
@@ -217,7 +221,7 @@ export class PaperExecutor {
     this.db.prepare("INSERT INTO paper_fills VALUES (?,?,?,?,?,?,?,?)").run(randomUUID(), o.id, clock.now(), o.qty, price, fee, q.ts,
       JSON.stringify({ version: "research-flat-v1", ...this.settings, source: q.bid > 0 ? "bid-ask" : "ltp-with-estimated-spread" }));
     if (o.side === "buy") {
-      this.db.prepare("INSERT INTO paper_positions VALUES (?,?,?,?,?,?,?,?)").run(o.symbol, o.qty, value, fee, o.stop_paise, clock.now(), paise(q.bid || q.ltp), q.ts);
+      this.db.prepare("INSERT INTO paper_positions(symbol,qty,cost_paise,entry_fee_paise,stop_paise,opened_at,mark_paise,mark_ts,entry_order_id) VALUES (?,?,?,?,?,?,?,?,?)").run(o.symbol, o.qty, value, fee, o.stop_paise, clock.now(), paise(q.bid || q.ltp), q.ts, o.id);
     } else {
       const p = this.wallet.positions().find(p => p.symbol === o.symbol);
       if (!p || o.qty > p.qty) throw new Error("Paper position invariant failed");

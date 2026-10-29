@@ -1,6 +1,6 @@
 # Operate the paper account
 
-Phase 1 provides a local backend for manual, long-only NSE cash-equity simulation. All monetary values in responses are **integer paise**; order input prices and environment capital values are **rupees**. No broker trading endpoint is used. The frontend ticket and automatic strategy entries are later phases.
+Phase 1 provides a local backend for manual, long-only NSE cash-equity simulation. All monetary values in responses are **integer paise**; order input prices and environment capital values are **rupees**. No broker trading endpoint is used. Phase 2 adds opt-in [strategy automation](AUTOMATION.md); the frontend ticket remains Phase 3 work.
 
 ## Try synthetic quotes without credentials
 
@@ -67,7 +67,7 @@ PAPER_FEE_BPS=5
 PAPER_FEE_EFFECTIVE_FROM=2026-01-01
 ```
 
-Run `pnpm start`. The inherited scanner reads broker quotes and generates observe-only decisions. Paper manual orders use that quote map. Paper positions and pending orders add their symbols to the feed's active token list. No broker order, cancel, modify, margin, or position-recovery call is needed for paper accounting. Market-data/login requests still require the configured broker and can fail independently of the paper ledger.
+Run `pnpm start`. The inherited scanner reads broker quotes and generates observe-only decisions. Manual orders and the separately controlled Phase 2 strategy service use that quote map. Paper positions and pending orders add their symbols to the feed's active token list. No broker order, cancel, modify, margin, or position-recovery call is needed for paper accounting. Market-data/login requests still require the configured broker and can fail independently of the paper ledger.
 
 Without broker data, ordinary startup keeps an empty session and paper orders are rejected for missing quotes. Use `paper:demo` for the explicit offline fixture workflow. Stale or unavailable data must never become a successful fill. The old dashboard displays the execution mode, but its inherited position panels remain strategy-engine views; use paper endpoints for authoritative paper-account records until Phase 3.
 

@@ -367,6 +367,7 @@ export class Engine {
           continue;
         }
         cands.push({
+          modelVersion: s1.modelVersion,
           symbol: r.symbol,
           side: r.side,
           setup: r.side === "long" ? "long_continuation" : "short_continuation",

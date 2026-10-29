@@ -3,6 +3,7 @@ import { cfg } from "../config.js";
 import { insertDecision } from "../db.js";
 import type { Question } from "./questions.js";
 import { clock } from "../time.js";
+import { parseEvaluation } from "./validation.js";
 
 export interface EvalAnswer {
   type: string;
@@ -54,7 +55,7 @@ export class JevModel implements Model {
         raw = await Promise.race([this.call(state, questions, ac.signal), deadline]);
       }
       const latencyMs = Date.now() - t0;
-      const parsed = normalize(raw);
+      const parsed = parseEvaluation(raw, questions);
       persist(parsed, stage, symbol, latencyMs);
       return { ...parsed, latencyMs, ok: true };
     } catch (e) {
@@ -119,39 +120,6 @@ function toSdkQuestions(questions: Record<string, Question>): Record<string, unk
     else out[k] = q;
   }
   return out;
-}
-
-function normalize(raw: unknown): Omit<EvalResult, "latencyMs" | "ok"> {
-  const r = raw as Record<string, unknown>;
-  const answersIn = (r.answers ?? r.data ?? {}) as Record<string, unknown>;
-  const answers: Record<string, EvalAnswer> = {};
-  const confidenceMap =
-    ((r.providerMetadata as { typesafe?: { confidence?: Record<string, number> } } | undefined)?.typesafe
-      ?.confidence) ?? {};
-  for (const [k, v] of Object.entries(answersIn)) {
-    const a = v as Record<string, unknown>;
-    const type = String(a.type ?? (a.probability !== undefined && a.choice === undefined && a.score === undefined ? "boolean" : "choice"));
-    const noul =
-      a.noul !== undefined
-        ? Number(a.noul)
-        : type === "boolean" || type === "noul"
-          ? Number(a.probability ?? 0)
-          : undefined;
-    answers[k] = {
-      type: type === "boolean" ? "noul" : type,
-      choice: a.choice !== undefined ? String(a.choice) : undefined,
-      score: a.score !== undefined ? Number(a.score) : undefined,
-      noul,
-      probabilities: (a.probabilities as Record<string, number> | undefined) ?? undefined,
-      confidence: a.confidence !== undefined ? Number(a.confidence) : confidenceMap[k],
-    };
-  }
-  const usage = (r.usage ?? {}) as Record<string, number>;
-  return {
-    answers,
-    tokens: Number(usage.inputTokens ?? usage.input_tokens ?? usage.totalTokens ?? 0),
-    modelId: String((r.response as { modelId?: string } | undefined)?.modelId ?? r.model ?? "typesafe-ai/jev"),
-  };
 }
 
 function persist(parsed: Omit<EvalResult, "latencyMs" | "ok">, stage: string, symbol: string | null, latencyMs: number): void {

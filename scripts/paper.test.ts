@@ -316,6 +316,10 @@ test("synthetic demo boots without credentials and serves a complete manual trad
     }
     const positions: unknown = await (await fetch(`${url}/api/paper/positions`)).json();
     assert.deepEqual(positions, []);
+    assert.equal((await fetch(`${url}/api/automation/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "automatic" }) })).status, 200);
+    await fetch(`${url}/api/automation/scan`, { method: "POST" });
+    const automated: unknown = await (await fetch(`${url}/api/paper/positions`)).json();
+    assert.ok(Array.isArray(automated) && automated.length > 0, "Standalone demo must also execute deterministic strategy signals");
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill();

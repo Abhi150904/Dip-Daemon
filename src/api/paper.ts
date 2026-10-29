@@ -2,11 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PaperExecutor } from "../executor/paper.js";
 import { PaperError } from "../portfolio/types.js";
 
-function reply(res: ServerResponse, status: number, body: unknown): void {
+export function reply(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 }
-async function body(req: IncomingMessage): Promise<unknown> {
+export async function body(req: IncomingMessage): Promise<unknown> {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new PaperError("Use application/json", 415);
   const chunks: Buffer[] = [];
   let size = 0;

@@ -27,13 +27,15 @@ import { barDayStart } from "./data/features.js";
 import { clock } from "./time.js";
 import type { PaperExecutor } from "./executor/paper.js";
 import { paperApi, requireLocalRequest } from "./api/paper.js";
+import type { PaperAutomation } from "./automation/paper.js";
+import { automationApi } from "./api/automation.js";
 
 const clients = new Set<ServerResponse>();
 let replayCtl: ReplayControl | null = null;
 let manager: ReplayManager | null = null;
 
 /** Replay passes a getter because a backward seek rebuilds its Engine. */
-export function startServer(target: Engine | (() => Engine), replay?: ReplayControl, port = cfg.port, paper?: PaperExecutor) {
+export function startServer(target: Engine | (() => Engine), replay?: ReplayControl, port = cfg.port, paper?: PaperExecutor, automation?: PaperAutomation) {
   const current = typeof target === "function" ? target : () => target;
   replayCtl = replay ?? null;
   manager = replay ? null : new ReplayManager();
@@ -44,6 +46,9 @@ export function startServer(target: Engine | (() => Engine), replay?: ReplayCont
       catch { res.writeHead(403); res.end("Local same-origin request required"); return; }
     }
     const url = new URL(req.url ?? "/", `http://${cfg.host}:${port}`);
+    if (url.pathname.startsWith("/api/automation/") || url.pathname === "/api/signals" || url.pathname.startsWith("/api/signals/") || url.pathname === "/api/strategies") {
+      void automationApi(req, res, url.pathname, automation); return;
+    }
     if (url.pathname.startsWith("/api/paper/")) { void paperApi(req, res, url.pathname, paper); return; }
     if (url.pathname === "/api/health") return json(res, { ok: true, mode: paper ? "paper" : engine.snapshot().mode });
     if (url.pathname === "/api/market/status") return json(res, { connected: !!engine.snapshot().session, quotes: engine.quotes.size, source: engine.dataSource, paper: !!paper });

@@ -58,6 +58,10 @@ Replay generally advances to minute start plus 59 seconds. Initial boot uses the
 
 ## Original design direction
 
+The Phase 2 automation boundary is implemented in `src/automation/paper.ts`. It consumes timestamped market snapshots and validated baseline/AI decisions, stores versioned signal/run records, and submits only through the paper intent API. Manual approvals and automatic scheduling share one execution gate. Configuration revisions invalidate pending/in-flight work; per-signal idempotency, symbol cooldowns and current-price/risk rechecks prevent duplicate or outdated orders. Strategy exits manage only positions linked by schema version 2's entry_order_id to an accepted automation buy signal.
+
+The existing engine still runs its observe/replay paths and supplies market data/model interfaces. Strategy service construction and ticking are explicit in main and the synthetic demo; legacy asynchronous fill callbacks never mutate paper records. This keeps the market scanner reusable without coupling strategy automation to live broker capabilities. See [Automation](AUTOMATION.md) for rules and APIs.
+
 Keep a modular monolith and SQLite. Construct the market-data reader separately from the selected executor. Strategies emit validated signals and order intents independent of mode. An observe executor records decisions without creating orders. PaperExecutor depends on quotes and a paper store, never a trading-capable broker.
 
 ```text

@@ -5,6 +5,7 @@ import type { EvalResult, Model } from "../model/index.js";
 import { stage1Questions, stage1State, stage2Questions, stage2QuestionsCandles } from "../model/questions.js";
 import type { IndexFeatures, Regime, Setup, SymbolFeatures, Tier } from "../types.js";
 import { clock } from "../time.js";
+import { validEvaluation } from "../model/validation.js";
 
 export interface Ranked {
   symbol: string;
@@ -13,6 +14,7 @@ export interface Ranked {
 }
 
 export interface Stage1Out {
+  modelVersion: string;
   ok: boolean;
   regime: Regime;
   riskOff: number;
@@ -25,6 +27,7 @@ export interface Stage1Out {
 }
 
 export interface Candidate {
+  modelVersion: string;
   symbol: string;
   side: "long" | "short";
   setup: Setup;
@@ -52,8 +55,9 @@ export async function runStage1(
 ): Promise<Stage1Out | null> {
   const candles = opts.candlesOnly ?? false;
   const state = stage1State(feats, index, candles);
-  const r = await model.evaluate(state, stage1Questions(feats.length, candles), "stage1", null);
-  if (!r.ok) return null;
+  const questions = stage1Questions(feats.length, candles);
+  const r = await model.evaluate(state, questions, "stage1", null);
+  if (!validEvaluation(r, questions)) return null;
   const longs: Ranked[] = [];
   const shorts: Ranked[] = [];
   let bestP = 0;
@@ -77,6 +81,7 @@ export async function runStage1(
   if (regime === "trend_up") keepS = [];
   if (regime === "trend_down") keepL = [];
   return {
+    modelVersion: r.modelId,
     ok: true,
     regime,
     riskOff: r.answers.risk_off?.noul ?? 0,
@@ -99,7 +104,7 @@ export async function runStage2(
   const candles = opts.candlesOnly ?? false;
   const questions = candles ? stage2QuestionsCandles : stage2Questions;
   const r = await model.evaluate(stage2State(feat, index, null, candles), questions, "stage2", feat.symbol);
-  if (!r.ok) return null;
+  if (!validEvaluation(r, questions)) return null;
   const setup = (r.answers.setup?.choice as Setup) || "chop";
   const setupProb = r.answers.setup?.probabilities?.[setup] ?? 0;
   const setupConf = r.answers.setup?.confidence ?? 0;
@@ -116,7 +121,7 @@ export async function runStage2(
     entryScore += (w[k] ?? 0) * v;
     wsum += w[k] ?? 0;
   }
-  entryScore = wsum > 0 ? entryScore / wsum : 0;
+  entryScore = wsum > 0 ? Math.round(entryScore / wsum * 1e6) / 1e6 : 0;
   const oneSided = candles ? 1 : (r.answers.one_sided?.noul ?? 0);
 
   let reject = "";
@@ -129,7 +134,7 @@ export async function runStage2(
   else if (oneSided < risk.minOneSided) reject = `one_sided ${oneSided.toFixed(2)}`;
 
   const tier: Tier = setupProb >= risk.tierASetup && entryScore >= risk.tierAScore ? "A" : "B";
-  return { symbol: feat.symbol, side: wanted, setup, setupProb, setupConf, entryScore, scores, oneSided, tier, passes: !reject, reject };
+  return { modelVersion: r.modelId, symbol: feat.symbol, side: wanted, setup, setupProb, setupConf, entryScore, scores, oneSided, tier, passes: !reject, reject };
 }
 
 export function pickBest(cands: Candidate[]): Candidate | null {

@@ -1,6 +1,6 @@
 # DipDaemon roadmap
 
-Updated 26 October 2026. Phases 0 and 1's manual paper MVP are delivered on main. No live execution or automatic AI paper entries are enabled.
+Updated 29 October 2026. Phases 0–2 are delivered on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
 
 ## Phase status
 
@@ -8,7 +8,7 @@ Updated 26 October 2026. Phases 0 and 1's manual paper MVP are delivered on main
 | --- | --- | --- |
 | 0: audit and foundation | Completed | Source audit/docs, native SQLite repair, type check, safety/lifecycle suite, deterministic smoke |
 | 1: persistent paper trading | Completed (manual MVP) | Isolated wallet/executor, manual API buy/sell, fees/P&L, cash/share reservations, restart, fault rollback, risk exits, synthetic offline demo |
-| 2: automated AI paper trading | Planned | Validated signals, deterministic baseline, approval/automatic paper workflows, audited exits |
+| 2: automated AI paper trading | Completed (offline verified) | Deterministic/validated AI signals, approval/automatic paper entry and exit, scheduler, ownership, cooldowns, audit trail and failure tests; real provider not exercised |
 | 3: dashboard | Planned | Browser operates paper workflow through authoritative paper APIs |
 | 4: evaluation | Planned | Two strategies compared with consistent assumptions and held-out data |
 | 5: reliability | Planned | Recoverable deployed service, health, backups, reconnect/monitoring, secrets and authentication |
@@ -37,9 +37,29 @@ The acceptance workflow is manual buy -> marked holding -> partial/full sell -> 
 
 Final validation: `pnpm typecheck`, all 30 `pnpm test` checks, and `pnpm smoke` pass. No external broker or model endpoint was exercised. The standalone synthetic demo was started and traded through the actual HTTP server in its own process.
 
-Explicit MVP limits: one virtual account, whole-share full fills, no shorts/options/increases, no quantity modification, weekday hours without an exchange-holiday calendar, flat estimated fees rather than broker tax itemization. Missing/stale data blocks entries/fills and can prevent an exit; positions remain recorded rather than pretending they closed. Frontend order tickets and automatic strategy entries are deferred.
+Explicit MVP limits: one virtual account, whole-share full fills, no shorts/options/increases, no quantity modification, weekday hours without an exchange-holiday calendar, flat estimated fees rather than broker tax itemization. Missing/stale data blocks entries/fills and can prevent an exit; positions remain recorded rather than pretending they closed. Frontend order tickets are deferred; strategy entries are now available through Phase 2's separate opt-in service.
 
-## Phase 2 file-by-file plan
+## Phase 2 delivery by file
+
+| Files | Delivered responsibility |
+| --- | --- |
+| `src/strategy/signals.ts` | Validated automation configuration, typed decisions, completed-bar VWAP/momentum baseline |
+| `src/model/validation.ts`, `src/model/jev.ts` | Required provider-answer validation, finite/range checks and identity recording; existing deadlines retained |
+| `src/strategy/continuation.ts`, `exits.ts`, `ai-paper.ts` | Reused two-stage ranking/exit questions, validated results, model versions, existing AI gates and six-decimal composite scores |
+| `src/automation/paper.ts` | Scheduled/manual scans, deadline/revision guards, approval/automatic execution, deterministic sizing/risk, cooldown/deduplication, ownership and transactional signal/order audit |
+| `src/portfolio/wallet.ts`, `types.ts`, `src/executor/paper.ts` | Additive entry-order identity migration, shared quote preview and strategy order explanations; manual records preserved |
+| `src/api/automation.ts`, `src/api/paper.ts`, `src/server.ts` | Local strategy/configuration/signal/run/event APIs using existing request protections |
+| `src/config.ts`, `src/main.ts`, `src/engine.ts` | Strict model/startup automation selection and snapshot/service wiring; legacy scanner stays observe-only |
+| `scripts/paper-demo.ts`, `automation.test.ts`, `paper.test.ts`, package scripts | Credential-free synthetic strategy operation, end-to-end API/demo and regression tests |
+| `docs/AUTOMATION.md` and existing docs | Exact commands, defaults, rules, data assumptions and remaining verification limits |
+
+The service owns decisions and orchestration; PaperExecutor remains authoritative for money and account limits. It never calls legacy Engine.handleFill or real broker trading methods. Schema version 2 preserves balances and legacy manual holdings; only positions linked to accepted automation buy signals are strategy-managed. Model/provider errors, invalid market context, expired approvals, timeout and stale configuration revisions produce no strategy orders.
+
+The real Jev provider, current market data, profitability, historical evaluation, public hosting and frontend interaction remain unverified. The deterministic strategy and Jev adapter are exercised offline, including automatic and approved entry/exit. See [Automation](AUTOMATION.md).
+
+Final Phase 2 verification on 29 October 2026: `pnpm typecheck`, all 54 `pnpm test` checks, `pnpm smoke` and `git diff --check` pass. No real order endpoint or model provider was called.
+
+## Original Phase 2 implementation checklist
 
 1. `src/model/jev.ts`, `src/model/index.ts`: validate provider output schemas, finite scores, declared versions, timeout/error no-order behavior.
 2. New strategy signal types and deterministic VWAP/momentum module under `src/strategy/`: explicit rules and independently testable signals.
@@ -50,4 +70,4 @@ Explicit MVP limits: one virtual account, whole-share full fills, no shorts/opti
 7. Offline tests: model error/timeout, rejected/duplicate signal, approval, cooldown, automatic entry/monitor/exit, persistent audit trail and broker isolation.
 8. Update documentation and mark Phase 2 complete only after the complete virtual strategy workflow is exercised.
 
-Phase 3 then adds the seven requested dashboard pages. Phase 4 expands historical evaluation with benchmarks, portfolio equity metrics, versioned data assumptions and out-of-sample evaluation. Phase 5 adds deployment safeguards before remote access. Phase 6 remains outside present authorization.
+Next is Phase 3: connect the paper account, order ticket, signals/approval, strategy controls and journal to the browser before adding historical-evaluation views. Phase 4 expands replay integrity, benchmarks, portfolio equity metrics and out-of-sample evaluation. Phase 5 adds deployment safeguards before remote access. Phase 6 remains outside present authorization.

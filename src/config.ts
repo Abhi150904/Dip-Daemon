@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
 import { parseTradingMode, requireSupportedMode } from "./execution-policy.js";
 import { paperSettings } from "./portfolio/types.js";
+import { automationSettings } from "./strategy/signals.js";
 
 loadEnv();
 
@@ -13,6 +14,11 @@ export type OptionsMode = "on" | "off";
 export type ModelName = "jev" | "mock";
 export type OnRestart = "adopt" | "flatten";
 export type BrokerName = "kotak" | "zerodha";
+
+export function parseModelName(value: string): ModelName {
+  if (value === "jev" || value === "mock") return value;
+  throw new Error("MODEL must be jev or mock");
+}
 
 export interface RiskWeights {
   trend_quality: number;
@@ -75,6 +81,7 @@ export const risk: RiskConfig = JSON.parse(readFileSync(riskPath, "utf8")) as Ri
 export const cfg = {
   tradingMode,
   paper: paperSettings(process.env),
+  automation: automationSettings({ mode: str("PAPER_AUTOMATION_MODE", "off"), strategy: str("PAPER_STRATEGY", "vwap_momentum") }),
   broker: (str("BROKER", "kotak").toLowerCase() === "zerodha" ? "zerodha" : "kotak") as BrokerName,
   kotakAccessToken: str("KOTAK_ACCESS_TOKEN"),
   kotakMobile: str("KOTAK_MOBILE"),
@@ -87,7 +94,7 @@ export const cfg = {
   zerodhaRequestToken: str("ZERODHA_REQUEST_TOKEN"),
   aiGatewayKey: str("AI_GATEWAY_API_KEY"),
   typesafeKey: str("TYPESAFE_AI_API_KEY"),
-  model: (/jev/i.test(str("MODEL", "mock")) ? "jev" : "mock") as ModelName,
+  model: parseModelName(str("MODEL", "mock")),
   optionsMode: str("OPTIONS_MODE", "off") === "on" ? "on" : "off",
   universe: str("UNIVERSE", "nifty50"),
   decisionIntervalS: num("DECISION_INTERVAL_S", 15),

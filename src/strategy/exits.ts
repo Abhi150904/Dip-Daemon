@@ -4,6 +4,7 @@ import type { Model } from "../model/index.js";
 import { positionQuestions } from "../model/questions.js";
 import type { IndexFeatures, OpenPosition, SymbolFeatures } from "../types.js";
 import { clock } from "../time.js";
+import { validEvaluation } from "../model/validation.js";
 
 export type ExitAction = "exit" | "breakeven" | "take_profit" | "hold";
 
@@ -44,7 +45,7 @@ export async function managePosition(
     stopAtBreakeven: pos.stop === pos.entryPrice,
   });
   const r = await model.evaluate(state, positionQuestions, "position", pos.symbol);
-  if (!r.ok) return { action: "hold", reason: "jev_fail", thesis: pos.thesis ?? 2, exitNow: 0, extended: 0, takeProfit: 0 };
+  if (!validEvaluation(r, positionQuestions)) return { action: "hold", reason: "jev_fail", thesis: pos.thesis ?? 2, exitNow: 0, extended: 0, takeProfit: 0 };
 
   const thesis = r.answers.thesis?.score ?? 2;
   const exitNow = r.answers.exit_now?.noul ?? 0;

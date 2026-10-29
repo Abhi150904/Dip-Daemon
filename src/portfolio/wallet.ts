@@ -29,6 +29,9 @@ export class PaperWallet {
         CREATE TABLE IF NOT EXISTS paper_days (date TEXT PRIMARY KEY, start_equity_paise INTEGER NOT NULL, halted INTEGER NOT NULL DEFAULT 0);
         INSERT OR IGNORE INTO paper_migrations VALUES (1);
       `);
+      const columns = db.prepare("PRAGMA table_info(paper_positions)").all() as { name: string }[];
+      if (!columns.some(c => c.name === "entry_order_id")) db.exec("ALTER TABLE paper_positions ADD COLUMN entry_order_id TEXT REFERENCES paper_orders(id)");
+      db.prepare("INSERT OR IGNORE INTO paper_migrations VALUES (2)").run();
       const result = db.prepare("INSERT OR IGNORE INTO paper_account VALUES (1, ?)").run(settings.initialCapital);
       if (result.changes) db.prepare("INSERT INTO paper_ledger(event_key,ts,kind,cash_paise) VALUES ('initial',?,'deposit',?)").run(now, settings.initialCapital);
     }).immediate();

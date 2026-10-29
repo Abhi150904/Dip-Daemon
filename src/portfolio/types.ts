@@ -99,6 +99,7 @@ export interface PaperOrder {
 }
 
 export interface PaperPosition {
+  entry_order_id: string | null;
   symbol: string;
   qty: number;
   cost_paise: number;
