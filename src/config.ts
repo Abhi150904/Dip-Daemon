@@ -4,6 +4,8 @@ import { config as loadEnv } from "dotenv";
 import { parseTradingMode, requireSupportedMode } from "./execution-policy.js";
 import { paperSettings } from "./portfolio/types.js";
 import { automationSettings } from "./strategy/signals.js";
+import { operationsSettings, secret } from "./ops/settings.js";
+import { protectSecrets } from "./ops/log.js";
 
 loadEnv();
 
@@ -79,21 +81,22 @@ const riskPath = resolve(process.cwd(), "risk.json");
 export const risk: RiskConfig = JSON.parse(readFileSync(riskPath, "utf8")) as RiskConfig;
 
 export const cfg = {
+  operations: operationsSettings(process.env),
   tradingMode,
   paper: paperSettings(process.env),
   automation: automationSettings({ mode: str("PAPER_AUTOMATION_MODE", "off"), strategy: str("PAPER_STRATEGY", "vwap_momentum") }),
   broker: (str("BROKER", "kotak").toLowerCase() === "zerodha" ? "zerodha" : "kotak") as BrokerName,
-  kotakAccessToken: str("KOTAK_ACCESS_TOKEN"),
+  kotakAccessToken: secret(process.env, "KOTAK_ACCESS_TOKEN"),
   kotakMobile: str("KOTAK_MOBILE"),
   kotakUcc: str("KOTAK_UCC"),
-  kotakMpin: str("KOTAK_MPIN"),
-  kotakTotpSecret: str("KOTAK_TOTP_SECRET"),
-  zerodhaApiKey: str("ZERODHA_API_KEY"),
-  zerodhaApiSecret: str("ZERODHA_API_SECRET"),
-  zerodhaAccessToken: str("ZERODHA_ACCESS_TOKEN"),
-  zerodhaRequestToken: str("ZERODHA_REQUEST_TOKEN"),
-  aiGatewayKey: str("AI_GATEWAY_API_KEY"),
-  typesafeKey: str("TYPESAFE_AI_API_KEY"),
+  kotakMpin: secret(process.env, "KOTAK_MPIN"),
+  kotakTotpSecret: secret(process.env, "KOTAK_TOTP_SECRET"),
+  zerodhaApiKey: secret(process.env, "ZERODHA_API_KEY"),
+  zerodhaApiSecret: secret(process.env, "ZERODHA_API_SECRET"),
+  zerodhaAccessToken: secret(process.env, "ZERODHA_ACCESS_TOKEN"),
+  zerodhaRequestToken: secret(process.env, "ZERODHA_REQUEST_TOKEN"),
+  aiGatewayKey: secret(process.env, "AI_GATEWAY_API_KEY"),
+  typesafeKey: secret(process.env, "TYPESAFE_AI_API_KEY"),
   model: parseModelName(str("MODEL", "mock")),
   optionsMode: str("OPTIONS_MODE", "off") === "on" ? "on" : "off",
   universe: str("UNIVERSE", "nifty50"),
@@ -113,7 +116,7 @@ export const cfg = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
-  telegramBotToken: str("TELEGRAM_BOT_TOKEN"),
+  telegramBotToken: secret(process.env, "TELEGRAM_BOT_TOKEN"),
   telegramChatId: str("TELEGRAM_CHAT_ID"),
   dbPath: str("DB_PATH", "data/harness.db"),
   host: str("HOST", "127.0.0.1"),
@@ -128,9 +131,7 @@ export const cfg = {
   maxRequotes: num("MAX_REQUOTES", 3),
 };
 
-if (tradingMode === "paper" && !["127.0.0.1", "::1", "localhost"].includes(cfg.host)) {
-  throw new Error("Paper account controls require a loopback HOST until authentication is implemented");
-}
+protectSecrets([cfg.operations.authToken, cfg.kotakAccessToken, cfg.kotakMpin, cfg.kotakTotpSecret, cfg.zerodhaApiKey, cfg.zerodhaApiSecret, cfg.zerodhaAccessToken, cfg.zerodhaRequestToken, cfg.aiGatewayKey, cfg.typesafeKey, cfg.telegramBotToken]);
 
 /** Enough credentials for the selected broker to attempt a session. */
 export function brokerConfigured(): boolean {

@@ -64,6 +64,8 @@ export class Engine {
   seeking = false;
   private fastBusy = false;
   private deciding = false;
+  private closing = false;
+  get idle() { return !this.fastBusy && !this.deciding && !this.managing; }
   dataSource: "broker" | "synthetic-fixtures" = "broker";
   extraActiveTokens: () => { token: string; segment: string; symbol: string }[] = () => [];
 
@@ -101,11 +103,13 @@ export class Engine {
 
   async start(): Promise<void> {
     await this.client.login();
+    if (this.closing) return;
     await this.client.loadScrips();
     if (!this.canTrade) {
       insertEvent("observe", "TRADING_MODE=observe: decisions run; all broker order mutations are disabled.");
     }
     await this.warmup();
+    if (this.closing) return;
     this.rebuildUniverse();
     this.quotes = await this.feed.tick().catch(() => this.quotes);
     await this.reconcile();
@@ -133,6 +137,7 @@ export class Engine {
     let loaded = 0;
     let skipped = 0;
     for (const sym of symbols) {
+      if (this.closing) return;
       const inst = this.client.getInstrument(sym);
       if (!inst) continue;
       const { t, c } = lastBar.get(sym) as { t: number | null; c: number };
@@ -171,7 +176,7 @@ export class Engine {
    * Replay passes awaitDecision so each virtual minute finishes deciding before the clock advances.
    */
   async tick(awaitDecision = false): Promise<void> {
-    if (this.fastBusy) return;
+    if (this.fastBusy || this.closing) return;
     this.fastBusy = true;
     try {
       await this.fastLoop();
@@ -179,7 +184,7 @@ export class Engine {
       this.fastBusy = false;
     }
     // Jev paused: no entry scans, no Jev exits. Stops, fills, flatten and kill keep running in the fast loop.
-    if (this.jevPaused || this.seeking) return;
+    if (this.jevPaused || this.seeking || this.closing) return;
     // Hold / sell / breakeven on open positions: its own faster cadence, independent of entry scans.
     const posMs = cfg.positionIntervalS * 1000;
     if (!this.managing && this.positions.size && clock.now() - this.lastPositionCheck >= posMs) {
@@ -891,6 +896,7 @@ export class Engine {
 
   /** Called from main on SIGINT/SIGTERM so the open session is closed with a reason. */
   shutdown(): void {
+    this.closing = true;
     this.endSession("shutdown");
   }
 

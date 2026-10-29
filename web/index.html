@@ -17,7 +17,7 @@
     <div class="sidebar-bottom"><span class="safe-dot"></span> Real orders disabled<a href="/legacy.html">Legacy dashboard & replay</a><span class="local-label">Local research workspace</span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><span class="workspace-label">Trading workspace</span><div class="status-group"><span id="mode-badge" class="badge">Connecting</span><span id="source-badge" class="badge">Checking data</span><span id="connection" class="connection">Connecting…</span></div></header>
+    <header class="topbar"><span class="workspace-label">Trading workspace</span><div class="status-group"><span id="mode-badge" class="badge">Connecting</span><span id="source-badge" class="badge">Checking data</span><span id="connection" class="connection">Connecting…</span><form id="session-end" action="/auth/logout" method="post" hidden><button class="button secondary small-button">Sign out</button></form></div></header>
     <main id="main" tabindex="-1">
       <div id="data-notice" class="notice" hidden></div>
       <div class="page-heading"><div><h1 id="page-title">Overview</h1><p id="page-description">Your paper account, positions and latest decisions.</p></div><div class="heading-actions"><span id="updated" class="muted"></span><button id="refresh" type="button" class="button secondary">Refresh</button><button id="scan" type="button" class="button primary" disabled>Scan market</button></div></div>

@@ -73,7 +73,7 @@ Without broker data, ordinary startup keeps an empty session and paper orders ar
 
 ## API reference
 
-All endpoints return JSON. New paper mutation APIs require loopback access, an accepted local Host, and a same-origin browser request. JSON bodies are limited to 16 KiB. Paper startup rejects a non-loopback HOST. This is local-service protection, not multiuser authentication.
+All endpoints return JSON. Paper APIs require an accepted Host and same-origin browser requests; without authentication they also require loopback access. JSON bodies are limited to 16 KiB. Non-loopback startup requires authentication and an exact origin. This remains a single shared account; see [deployment](DEPLOYMENT.md).
 
 | Method | Path | Result |
 | --- | --- | --- |

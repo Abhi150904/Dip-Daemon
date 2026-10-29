@@ -4,7 +4,7 @@
 
 DipDaemon is an NSE trading research platform derived from [WarrenDuffer](https://github.com/arimanyus/warrenduffer). Its inherited TypeScript engine combines market features, Jev ranking, deterministic risk gates, SQLite records, historical replay, and a local dashboard.
 
-Phases 0–4 provide safety controls, persistent paper trading, strategy automation, a browser workspace and repeatable local strategy evaluation. **Startup defaults to `TRADING_MODE=observe`; `TRADING_MODE=paper` enables the isolated virtual account. Strategy execution defaults off and requires approval/automatic opt-in. Both real broker clients still block order placement, modification, and cancellation.** Credentials, Jev, and the legacy mock override cannot enable real orders. `live` configuration fails at startup. Historical replay retains its separate simulated executor.
+Phases 0–5 provide safety controls, persistent paper trading, strategy automation, a browser workspace and repeatable local strategy evaluation. **Startup defaults to `TRADING_MODE=observe`; `TRADING_MODE=paper` enables the isolated virtual account. Strategy execution defaults off and requires approval/automatic opt-in. Both real broker clients still block order placement, modification, and cancellation.** Credentials, Jev, and the legacy mock override cannot enable real orders. `live` configuration fails at startup. Historical replay retains its separate simulated executor.
 
 The paper backend supports persistent cash/share reservations, market/limit orders, cancellation/modification, stops, daily loss halts, journal records, and integer-paise P&L. The replay simulator remains separate from the paper wallet. Research results do not establish future profitability.
 
@@ -27,10 +27,11 @@ No `.env` file is needed for `pnpm paper:demo`. For broker data, create `.env` u
 
 For manual paper trading with broker quotes, set `TRADING_MODE=paper`. For a credential-free offline demonstration, run `pnpm paper:demo`. The demo labels synthetic quotes and stores a separate account in `data/paper-demo.db`. See [paper-trading commands](docs/PAPER_TRADING.md) and [enable approval or automatic strategy trading](docs/AUTOMATION.md). Use the browser order ticket, strategy approval/automation controls and journal; see [browser workflow](docs/DASHBOARD.md). Use [Backtesting](docs/BACKTESTING.md) to compare frozen datasets with separate holdout results; synthetic examples are not historical performance. The deterministic strategy requires no model key; the Jev adapter is tested offline but not verified against the real provider.
 
-The dashboard has no authentication. Keep `HOST=127.0.0.1` and do not expose its controls publicly. Observe mode does not adopt, manage, or flatten existing broker positions.
+The dashboard supports access-token authentication and verified backups. Keep the default loopback deployment; see [deployment and recovery](docs/DEPLOYMENT.md) for Docker, secret files and HTTPS proxy requirements. Observe mode does not adopt, manage, or flatten existing broker positions.
 
 ## Documentation
 
+- [Deploy, monitor and recover](docs/DEPLOYMENT.md)
 - [Architecture and paper accounting](docs/ARCHITECTURE.md)
 - [Existing features and reuse decisions](docs/EXISTING_FEATURES.md)
 - [Roadmap and file-by-file implementation plan](docs/ROADMAP.md)

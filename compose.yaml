@@ -1,0 +1,56 @@
+services:
+  dipdaemon:
+    build: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      APP_ORIGIN: "http://127.0.0.1:${APP_PORT:-8080}"
+      AUTH_TOKEN_FILE: /run/secrets/dashboard_token
+      TRADING_MODE: "${TRADING_MODE:-observe}"
+      MODEL: "${MODEL:-mock}"
+      BROKER: "${BROKER:-kotak}"
+      PAPER_INITIAL_CAPITAL: "${PAPER_INITIAL_CAPITAL:-10000}"
+      PAPER_MAX_ORDER_VALUE: "${PAPER_MAX_ORDER_VALUE:-1000}"
+      PAPER_MAX_POSITIONS: "${PAPER_MAX_POSITIONS:-3}"
+      PAPER_DAILY_LOSS_LIMIT: "${PAPER_DAILY_LOSS_LIMIT:-300}"
+      PAPER_QUOTE_MAX_AGE_MS: "${PAPER_QUOTE_MAX_AGE_MS:-15000}"
+      PAPER_SLIPPAGE_BPS: "${PAPER_SLIPPAGE_BPS:-2}"
+      PAPER_FALLBACK_SPREAD_BPS: "${PAPER_FALLBACK_SPREAD_BPS:-5}"
+      PAPER_FEE_BPS: "${PAPER_FEE_BPS:-5}"
+      PAPER_FEE_EFFECTIVE_FROM: "${PAPER_FEE_EFFECTIVE_FROM:-2026-01-01}"
+      PAPER_AUTOMATION_MODE: "${PAPER_AUTOMATION_MODE:-off}"
+      PAPER_STRATEGY: "${PAPER_STRATEGY:-vwap_momentum}"
+      BACKUP_INTERVAL_MIN: "${BACKUP_INTERVAL_MIN:-60}"
+      BACKUP_KEEP: "${BACKUP_KEEP:-24}"
+      SHUTDOWN_TIMEOUT_MS: "${SHUTDOWN_TIMEOUT_MS:-20000}"
+      DB_PATH: /app/data/dipdaemon.db
+      KILL_PATH: /app/data/kill.switch
+      BACKUP_DIR: /backups
+    secrets:
+      - dashboard_token
+    volumes:
+      - account_data:/app/data
+      - backup_data:/backups
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  dashboard_token:
+    file: "${DASHBOARD_TOKEN_FILE:-./.secrets/dashboard-token}"
+volumes:
+  account_data:
+  backup_data:

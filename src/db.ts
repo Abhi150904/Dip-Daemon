@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { cfg } from "./config.js";
 import { clock, istDateStr } from "./time.js";
+import { redact } from "./ops/log.js";
 import type { DecisionRow, GovernorState } from "./types.js";
 
 mkdirSync(dirname(cfg.dbPath) === "." ? "data" : dirname(cfg.dbPath), { recursive: true });
@@ -243,7 +244,7 @@ export function setCapital(n: number): number {
 }
 
 export function insertEvent(kind: string, message: string): void {
-  db.prepare("INSERT INTO events (ts, kind, message) VALUES (?, ?, ?)").run(clock.now(), kind, message);
+  db.prepare("INSERT INTO events (ts, kind, message) VALUES (?, ?, ?)").run(clock.now(), kind, redact(message));
 }
 
 export function insertSnapshot(s: {

@@ -158,7 +158,7 @@ function renderContent() {
     if (page === 'settings') {
         const a = data.account, s = a?.settings;
         slot('limits', s ? pairs([['Starting capital', money(s.initialCapital)], ['Max order value', money(s.maxOrderValue)], ['Max positions', number(s.maxPositions)], ['Daily loss limit', money(s.dailyLossLimit)], ['Quote age limit', number(s.quoteMaxAgeMs / 1000) + ' seconds'], ['Slippage', number(s.slippageBps) + ' bps'], ['Fallback spread', number(s.fallbackSpreadBps) + ' bps'], ['Estimated fee', number(s.feeBps) + ' bps'], ['Fee effective from', e(s.feeEffectiveFrom)]]) + '<p class="ticket-note">Account limits are set on server startup. Fees are estimates, not broker contract-note charges.</p>' : empty('No paper account in this mode.'));
-        slot('configuration', pairs([['Data source', e(data.source)], ['Broker', data.source === 'synthetic-fixtures' ? 'Synthetic demo · no broker access' : e(data.market.broker)], ['Model', e(data.market.model)], ['Scan interval', number(data.automation?.settings.scanIntervalS) + ' seconds'], ['Last scan', time(data.automation?.lastScan, true)], ['Data clock', time(data.now, true)], ['Health', offline ? 'Disconnected' : 'Dashboard connected']]) + '<p class="ticket-note">Provider and model credentials are configured on the server. No secrets are shown or stored in this interface.</p>');
+        slot('configuration', pairs([['Data source', e(data.source)], ['Broker', data.source === 'synthetic-fixtures' ? 'Synthetic demo · no broker access' : e(data.market.broker)], ['Model', e(data.market.model)], ['Scan interval', number(data.automation?.settings.scanIntervalS) + ' seconds'], ['Last scan', time(data.automation?.lastScan || null, true)], ['Data clock', time(data.now, true)], ['Service', offline ? 'Disconnected' : data.system?.ready ? 'Ready' : data.system?.phase === 'running' ? 'Not ready · tick delayed' : e(data.system?.phase || 'Unknown')], ['Market quotes', data.system?.market.fresh ? 'Latest quote fresh' : 'Unavailable or stale'], ['Access', data.system?.authentication ? 'Authenticated' : 'Local only'], ['Last completed tick', time(data.system?.lastTick, true)], ['Last verified backup', time(data.system?.backup?.lastSuccess, true)], ['Backup status', data.system?.backupHealthy === false ? 'Backup failed · inspect service logs' : data.system?.backup?.lastSuccess ? 'Verified' : 'Pending'], ['Feed retries', number(data.system?.market.failures)]]) + '<p class="ticket-note">Provider and model credentials are configured on the server. No secrets are shown or stored in this interface.</p>');
     }
     controls();
 }
@@ -181,6 +181,7 @@ function render() {
     $('source-badge').className = 'badge synthetic';
     $('connection').textContent = offline ? 'Disconnected' : (data.source === 'synthetic-fixtures' ? 'Synthetic feed' : data.market.connected ? 'Market connected' : 'Market disconnected') + ' · ' + time(data.now);
     $('updated').textContent = 'Updated ' + time(data.now);
+    $('session-end').hidden = !data.system?.authentication;
     const a = data.account;
     const notice = !a ? 'Observe / replay mode. Paper account controls are unavailable.' : a.killed ? 'Emergency stop active. New buys are blocked; paper positions are being closed when fresh quotes and session hours permit.' : a.halted ? 'Daily loss halt active. New buys are blocked.' : a.stalePrices ? 'Some position prices are stale. Equity is unavailable until fresh quotes arrive.' : data.source === 'synthetic-fixtures' ? 'Synthetic demo · simulated prices and virtual funds. Data clock runs independently of real market time.' : '';
     $('data-notice').textContent = notice;
@@ -297,6 +298,13 @@ async function refresh() {
         offline = true;
         $('load-error').hidden = false;
         $('load-error').textContent = `Connection unavailable: ${error.message} Showing the last received snapshot; order controls are disabled.`;
+        if (error instanceof ApiError && error.status === 401) {
+            $('load-error').textContent = 'Your session ended. Sign in again, then inspect order history before retrying an interrupted submission. Orders are disabled.';
+            const link = document.createElement('a');
+            link.href = '/login'; link.textContent = 'Sign in'; link.className = 'button secondary small-button section-gap';
+            $('load-error').append(document.createElement('br'), link);
+            $('session-end').hidden = true;
+        }
         $('connection').textContent = 'Disconnected';
     }
     finally {

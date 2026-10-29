@@ -1,4 +1,3 @@
-import { installCrashHandler } from "./alerts.js";
 import { brokerConfigured, cfg } from "./config.js";
 import { createBroker } from "./broker.js";
 import { Engine } from "./engine.js";
@@ -10,8 +9,10 @@ import { PaperExecutor } from "./executor/paper.js";
 import { PaperAutomation } from "./automation/paper.js";
 import { buildFeatures, buildIndexFeatures, loadBars } from "./data/features.js";
 import { INDEX_TOKEN } from "./symbols.js";
-
-installCrashHandler();
+import { Backups } from "./ops/backup.js";
+import { Health, ServiceLoop, installLifecycle, waitForIdle } from "./ops/runtime.js";
+import { log } from "./ops/log.js";
+import { stopEvaluations } from "./backtest/store.js";
 
 const client = createBroker(() => {
   void alert("session", cfg.broker === "zerodha" ? "kite session expired; run pnpm zerodha:login, set ZERODHA_ACCESS_TOKEN, restart. Entries halted" : "session expired and re-login failed; entries halted");
@@ -32,27 +33,48 @@ engine.extraActiveTokens = () => paper ? [...new Set([...paper.positions().map(p
     return instrument ? [{ token: instrument.token, segment: instrument.segment, symbol }] : [];
   }) : [];
 
-async function main(): Promise<void> {
-  if (!brokerConfigured()) {
-    console.error(`Set ${cfg.broker === "zerodha" ? "ZERODHA_*" : "KOTAK_*"} in .env (see docs/PAPER_TRADING.md), or run pnpm paper:demo. Starting dashboard-only with empty session.`);
-  } else {
-    try {
-      await engine.start();
-    } catch (e) {
-      console.error("startup failed (dashboard still up):", e);
-      void alert("session", `startup failed ${e}`);
-    }
+const health = new Health();
+health.phase = "starting";
+const backups = new Backups(db, cfg.operations.backupDir, cfg.operations.backupKeep);
+const backupState: { lastSuccess: number | null; lastFailure: number | null } = { lastSuccess: null, lastFailure: null };
+health.backup = backupState;
+const runBackup = async () => {
+  try { await backups.run(); log("info", "backup_verified"); }
+  catch (error) { log("error", "backup_failed", { error }); }
+  finally { backupState.lastSuccess = backups.lastSuccess; backupState.lastFailure = backups.lastFailure; }
+};
+const configured = brokerConfigured();
+let initialized = false;
+const loop = new ServiceLoop(async () => {
+  if (!initialized) {
+    if (configured) await engine.start();
+    else log("warn", "market_data_unconfigured", { mode: cfg.tradingMode });
+    initialized = true;
+    if (health.phase !== "stopping") health.phase = "running";
   }
-  startServer(engine, undefined, cfg.port, paper, automation);
-  setInterval(() => {
-    void engine.tick().then(() => { paper?.tick(); void automation.tick().catch(e => console.error("automation", e)); }).catch((e) => console.error("tick", e));
-  }, 2000);
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => {
-      engine.shutdown();
-      process.exit(0);
-    });
-  }
-}
-
-void main();
+  await engine.tick();
+  paper?.tick();
+}, health);
+// Model latency must never delay fresh quotes, stops or paper risk checks.
+const strategyLoop = new ServiceLoop(async () => { if (initialized) await automation.tick(); }, new Health(), 2000, "strategy");
+const server = startServer(engine, undefined, cfg.port, paper, automation, health);
+const backupTimer = setInterval(() => { if (health.phase !== "stopping") void runBackup(); }, cfg.operations.backupIntervalMinutes * 60000);
+installLifecycle({ health, timeoutMs: cfg.operations.shutdownMs,
+  prepare() { clearInterval(backupTimer); automation.stop(); engine.shutdown(); },
+  async close() {
+    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    server.closeAllConnections();
+    await stopEvaluations();
+    await loop.stop();
+    await strategyLoop.stop();
+    await waitForIdle(() => engine.idle && automation.idle);
+    await closed;
+    await backups.drain();
+    await runBackup();
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+  },
+});
+void runBackup();
+loop.start();
+strategyLoop.start();

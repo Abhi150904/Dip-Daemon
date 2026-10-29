@@ -16,6 +16,9 @@ interface SignalRow {
 export class PaperAutomation {
   private scanning = false;
   private lastScan = 0;
+  private stopped = false;
+  get idle() { return !this.scanning; }
+  stop() { if (this.stopped) return; this.configure({ mode: "off" }); this.stopped = true; }
   constructor(readonly db: Database.Database, readonly paper: PaperExecutor | undefined,
     private readonly snapshot: () => StrategySnapshot, private readonly model: Model,
     settings: AutomationSettings = automationDefaults) {
@@ -38,6 +41,7 @@ export class PaperAutomation {
     return { revision: row.revision, settings: automationSettings(JSON.parse(row.payload)) };
   }
   configure(raw: unknown) {
+    if (this.stopped) throw new PaperError("Strategy service is stopping", 503);
     const existing = this.db.prepare("SELECT payload FROM paper_automation_config WHERE id=1").get() as { payload: string } | undefined;
     const settings = automationSettings(raw, existing ? automationSettings(JSON.parse(existing.payload)) : automationDefaults);
     if (!this.paper && settings.mode !== "off") throw new PaperError("Automation execution requires TRADING_MODE=paper", 409);
@@ -138,12 +142,14 @@ export class PaperAutomation {
   }
 
   async tick(): Promise<void> {
+    if (this.stopped) return;
     const { settings } = this.config();
     if (settings.mode === "off" || this.scanning || clock.now() - this.lastScan < settings.scanIntervalS * 1000) return;
     if (!isWeekday() || minutesOfDay() < 555 || minutesOfDay() >= 910) return;
     await this.scan();
   }
   async scan() {
+    if (this.stopped) throw new PaperError("Strategy service is stopping", 503);
     if (this.scanning) throw new PaperError("A strategy scan is already running", 409);
     const { settings, revision } = this.config();
     this.scanning = true;

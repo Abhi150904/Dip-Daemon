@@ -1,3 +1,4 @@
+import './test-env.js';
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -323,8 +324,8 @@ test("synthetic demo boots without credentials and serves a complete manual trad
     const timeout = setTimeout(() => reject(new Error(`Demo startup timeout: ${log}`)), 15000);
     child.stdout.on("data", (chunk: Buffer) => {
       log += chunk.toString();
-      const match = /http:\/\/127\.0\.0\.1:\d+/.exec(log);
-      if (match) { clearTimeout(timeout); resolve(match[0]); }
+      const match = /"event":"http_listening","host":"127\.0\.0\.1","port":(\d+)/.exec(log);
+      if (match) { clearTimeout(timeout); resolve(`http://127.0.0.1:${match[1]}`); }
     });
     child.stderr.on("data", (chunk: Buffer) => { log += chunk.toString(); });
     child.once("exit", code => { clearTimeout(timeout); reject(new Error(`Demo exited ${code}: ${log}`)); });

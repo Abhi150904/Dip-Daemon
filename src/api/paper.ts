@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PaperExecutor } from "../executor/paper.js";
 import { PaperError } from "../portfolio/types.js";
+import { cfg } from "../config.js";
+import { Access } from "../ops/access.js";
+export const access = new Access(cfg.operations);
 
 export function reply(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -21,12 +24,7 @@ export async function body(req: IncomingMessage, maxBytes = 16384): Promise<unkn
 }
 
 export function requireLocalRequest(req: IncomingMessage): void {
-    const address = req.socket.remoteAddress;
-    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) throw new PaperError("Local access required", 403);
-    const host = req.headers.host;
-    if (!host || !["localhost", "127.0.0.1", "[::1]"].some(name => host === `${name}:${req.socket.localPort}`)) throw new PaperError("Invalid Host", 403);
-    if (req.headers.origin && req.headers.origin !== `http://${host}`) throw new PaperError("Same-origin access required", 403);
-    if (req.headers["sec-fetch-site"] === "cross-site") throw new PaperError("Cross-site access denied", 403);
+    access.require(req);
 }
 
 export async function paperApi(req: IncomingMessage, res: ServerResponse, path: string, paper?: PaperExecutor): Promise<void> {

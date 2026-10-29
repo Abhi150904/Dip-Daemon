@@ -10,7 +10,7 @@ Audit date: 26 October 2026. No real broker order endpoint was called. Broker/mo
 | Startup recovery bypassed entry guards | Engine.reconcile directly cancelled unknown orders, flattened MIS positions, or placed protection after adoption | Observe and replay skip real-account reconciliation |
 | Kill, daily loss, and session flatten could mutate orders | Engine fastLoop/checkKill -> executor cancellation and exits | Both real clients reject mutations unconditionally; observe lifecycle spy matrix now passes |
 | Invalid configuration could silently fall back or produce NaN | Broker/model fallback and numeric parsing in config.ts | Trading mode is validated now; full numeric/risk validation is pending |
-| Account API controls lack authentication | server.ts accepts kill/resume, capital/wild and replay operations | Keep loopback only; access control required before remote exposure |
+| Account API controls lack authentication | server.ts accepts kill/resume, capital/wild and replay operations | Default loopback; Phase 5 adds authenticated access and exact origin/proxy checks |
 | Cached quotes can remain indefinitely | LiveFeed retains earlier quotes; entry/fill paths lack consistent freshness gates | Documented; freshness is a Phase 1 acceptance requirement |
 
 ## Mutation inventory
@@ -33,7 +33,7 @@ Other network operations include broker login/token exchange, instrument dumps, 
 ## Current execution policy
 
 - Missing TRADING_MODE defaults to observe, including when broker credentials exist.
-- Empty, misspelled, or unknown modes throw. Paper is an explicit virtual-account opt-in; live still throws. Paper settings are validated and non-loopback paper startup is rejected.
+- Empty, misspelled, or unknown modes throw. Paper is an explicit virtual-account opt-in; live still throws. Paper settings are validated; non-loopback startup requires Phase 5 authentication and origin settings.
 - ALLOW_MOCK_TRADING remains parsed for inherited compatibility but has no execution authority.
 - Replay requires an explicitly supplied executor. Real client mutation blocks remain active even if a caller incorrectly injects a live executor.
 - Observe does not reconcile, adopt, cancel, or flatten broker positions. This application is not protection for an existing real position.
@@ -86,9 +86,9 @@ Initial HTTP execution required localhost permission in the restricted runner. T
 
 Final Phase 1 results on 26 October 2026: `pnpm typecheck` passed; `pnpm test` passed all 30 tests (22 top-level cases plus eight lifecycle subtests); `pnpm smoke` passed with the expected fixture candidate and whole-share size. `git diff --check` passed. The manual account/API, persistent restart, atomic rollback, and standalone synthetic demo acceptance checks all ran successfully.
 
-Paper weekday session checks do not include holidays. Full fills do not model liquidity or partial executions. Fee model research-flat-v1 is a dated combined estimate, not certified brokerage/tax itemization. Quote timestamps from inherited clients represent receipt time. Stale position marks make current equity/P&L unavailable; unfillable protective exits remain open exposure. The first valid valuation each IST date sets the durable daily equity baseline. A position carried because prices were unavailable uses the first valid next-day mark for that day's baseline. Account reset, multiuser authentication, full paper frontend and historical replay integration remain unimplemented. Phase 2 now adds explicitly controlled strategy entries/exits.
+Paper weekday session checks do not include holidays. Full fills do not model liquidity or partial executions. Fee model research-flat-v1 is a dated combined estimate, not certified brokerage/tax itemization. Quote timestamps from inherited clients represent receipt time. Stale position marks make current equity/P&L unavailable; unfillable protective exits remain open exposure. The first valid valuation each IST date sets the durable daily equity baseline. A position carried because prices were unavailable uses the first valid next-day mark for that day's baseline. Account reset and multiuser roles remain unimplemented. Phase 3 supplies the paper frontend; Phase 4 supplies a separate historical evaluation workspace. Phase 2 now adds explicitly controlled strategy entries/exits.
 
-Paper APIs enforce loopback remote address, local Host, browser Origin and a 16 KiB JSON limit. Paper mode also applies the local request guard to inherited mutation controls and rejects non-loopback HOST configuration. The synthetic demo blocks outgoing fetch entirely and labels its market source; it uses a separate persistent account. These controls support local development, not public deployment.
+APIs enforce Host/origin checks and a 16 KiB JSON limit. Without authentication they require loopback; authenticated non-loopback binding requires the Phase 5 deployment settings. The synthetic demo blocks outgoing fetch entirely and labels its market source; it uses a separate persistent account. See [deployment and recovery](DEPLOYMENT.md) for authentication, HTTPS proxy requirements and the limits of local Docker verification.
 
 ## Phase 2 safety and verification
 

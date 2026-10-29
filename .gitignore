@@ -11,3 +11,7 @@ dist/
 kill.switch
 .DS_Store
 .impeccable/review/
+.secrets/
+/backups/
+*.partial
+*.manifest.json

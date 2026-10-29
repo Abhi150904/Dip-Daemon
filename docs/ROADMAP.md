@@ -1,6 +1,6 @@
 # DipDaemon roadmap
 
-Updated 29 October 2026. Phases 0–4 are delivered as local, offline-verified workflows on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
+Updated 29 October 2026. Phases 0–5 are delivered as local workflows with isolated Docker recovery verification on main. Live execution stays disabled. Strategy execution defaults off until explicitly enabled for paper trading.
 
 ## Phase status
 
@@ -11,7 +11,7 @@ Updated 29 October 2026. Phases 0–4 are delivered as local, offline-verified w
 | 2: automated AI paper trading | Completed (offline verified) | Deterministic/validated AI signals, approval/automatic paper entry and exit, scheduler, ownership, cooldowns, audit trail and failure tests; real provider not exercised |
 | 3: dashboard | Completed (local workflow) | Seven browser pages; manual orders/close/modify/cancel, signal approval and policy controls, journal, responsive QA and 57 passing tests; evaluation remains Phase 4 |
 | 4: evaluation | Completed (offline workflow) | VWAP/session benchmark, recorded-AI archive replay, full-session/universe validation, isolated worker, saved runs, metrics and separate holdout; real historical provenance unverified |
-| 5: reliability | Planned | Recoverable deployed service, health, backups, reconnect/monitoring, secrets and authentication |
+| 5: reliability | Completed (local Docker verified) | Authenticated service, health, verified backups/restore, reconnect backoff, graceful shutdown, secret files and rotated logs; public HTTPS and real providers unverified |
 | 6: optional live trading | Blocked | Explicit authorization and independent reconciliation, execution, operational and compliance review |
 
 ## Phase 0 record
@@ -76,4 +76,8 @@ Phase 3 connects the paper account, order ticket, signals/approval, strategy con
 
 `src/backtest/` validates immutable datasets, runs a causal next-open intraday evaluator and persists independent results. A bounded worker protects the running paper loop. `src/api/backtest.ts` provides local imports, cache capture and saved comparisons. `web/backtests.js` replaces the placeholder with configuration, separate in-sample/holdout results, equity/ledger views and JSON export. The existing completed-bar VWAP signal implementation is reused; legacy interactive replay is preserved but its candle-timing assumptions are not reused for evaluation.
 
-See [evaluation operation and limitations](BACKTESTING.md). Real historical membership, adjustments and provider/model authenticity require independent evidence. Next is Phase 5 reliability; live trading remains outside authorization.
+See [evaluation operation and limitations](BACKTESTING.md). Real historical membership, adjustments and provider/model authenticity require independent evidence. Phase 5 adds the deployment safeguards below; live trading remains outside authorization.
+
+## Phase 5 delivery
+
+`src/ops/` owns access control, redacted structured logs, health/lifecycle and verified online backups. Independent serial quote/risk and strategy loops prevent slow model calls from blocking protective processing. Feed retries back off without refreshing stale timestamps. Docker runs as a non-root user with a read-only root filesystem, private secret mount, persistent account/backup volumes and loopback publishing. The browser adds sign-in/sign-out, session recovery and Settings health. See [deployment and recovery](DEPLOYMENT.md) for exact operation and remaining limits. Phase 6 requires separate explicit authorization; real execution remains disabled.

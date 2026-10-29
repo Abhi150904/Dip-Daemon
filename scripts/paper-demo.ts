@@ -5,10 +5,11 @@ import type { Quote } from "../src/types.js";
 
 const demoPath = process.env.PAPER_DEMO_DB_PATH ?? "data/paper-demo.db";
 Object.assign(process.env, {
-  TRADING_MODE: "paper", MODEL: "mock", HOST: "127.0.0.1",
+  TRADING_MODE: "paper", MODEL: "mock", HOST: "127.0.0.1", APP_ORIGIN: "",
   DB_PATH: demoPath, KILL_PATH: `${demoPath}.kill`,
-  RSS_FEEDS: "", TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "",
+  RSS_FEEDS: "", TELEGRAM_BOT_TOKEN: "", TELEGRAM_BOT_TOKEN_FILE: "", TELEGRAM_CHAT_ID: "",
   PAPER_AUTOMATION_MODE: "off", PAPER_STRATEGY: "vwap_momentum",
+  BACKUP_DIR: process.env.BACKUP_DIR ?? `${demoPath}.backups`,
 });
 // This script must remain offline even if private broker credentials exist in .env.
 globalThis.fetch = async () => { throw new Error("Synthetic demo cannot access external services"); };
@@ -61,19 +62,37 @@ const automation = new PaperAutomation(db, paper, () => {
   return { source: "synthetic-fixtures", quotes, bars: new Map(quotes.map(q => [q.symbol, loadBars(q.symbol)])),
     features: quotes.flatMap(q => { const f = buildFeatures(q.symbol, q); return f ? [f] : []; }), index: null, indexTs: null };
 }, engine.model, { ...cfg.automation, strategy: "vwap_momentum" });
-const server = startServer(engine, undefined, cfg.port, paper, automation);
-const timer = setInterval(() => {
+const { Health, ServiceLoop, installLifecycle, waitForIdle } = await import("../src/ops/runtime.js");
+const { Backups } = await import("../src/ops/backup.js");
+const { stopEvaluations } = await import("../src/backtest/store.js");
+const { log } = await import("../src/ops/log.js");
+const health = new Health();
+const backups = new Backups(db, cfg.operations.backupDir, cfg.operations.backupKeep);
+const backupState: { lastSuccess: number | null; lastFailure: number | null } = { lastSuccess: null, lastFailure: null };
+health.backup = backupState;
+const runBackup = async () => {
+  try { await backups.run(); log("info", "backup_verified"); }
+  catch (error) { log("error", "backup_failed", { error }); }
+  finally { backupState.lastSuccess = backups.lastSuccess; backupState.lastFailure = backups.lastFailure; }
+};
+const server = startServer(engine, undefined, cfg.port, paper, automation, health);
+const loop = new ServiceLoop(async () => {
   step++;
   time.set(clock.now() + 2000);
   update();
-  try { paper.tick(); void automation.tick().catch(error => console.error("demo strategy", error)); } catch (error) { console.error("paper demo tick failed", error); }
-}, 2000);
+  paper.tick();
+}, health);
+const strategyLoop = new ServiceLoop(async () => { await automation.tick(); }, new Health(), 2000, "strategy");
 console.log(`SYNTHETIC FIXTURES ONLY. Virtual clock starts 09:45 IST. Paper records: ${resolve(cfg.dbPath)}`);
 console.log("Use /api/paper/* and /api/automation/*. Strategy execution defaults off; enable approval or automatic mode explicitly.");
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    clearInterval(timer);
-    server.closeAllConnections();
-    server.close(() => { db.close(); process.exit(0); });
-  });
-}
+const backupTimer = setInterval(() => { void runBackup(); }, cfg.operations.backupIntervalMinutes * 60000);
+installLifecycle({ health, timeoutMs: cfg.operations.shutdownMs,
+  prepare() { clearInterval(backupTimer); automation.stop(); engine.shutdown(); },
+  async close() {
+    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    server.closeAllConnections(); await stopEvaluations(); await loop.stop(); await strategyLoop.stop();
+    await waitForIdle(() => automation.idle); await closed; await backups.drain(); await runBackup();
+    db.pragma("wal_checkpoint(TRUNCATE)"); db.close();
+  },
+});
+void runBackup(); loop.start(); strategyLoop.start();

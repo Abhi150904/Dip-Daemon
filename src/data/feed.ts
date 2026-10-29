@@ -3,6 +3,7 @@ import { applyQuoteToBar, seedBars } from "./bars.js";
 import type { Bar, Quote } from "../types.js";
 import type { Broker } from "../broker.js";
 import { INDEX_TOKEN } from "../symbols.js";
+import { log } from "../ops/log.js";
 
 export interface Feed {
   kind: "live" | "replay" | "candles";
@@ -12,6 +13,10 @@ export interface Feed {
 export class LiveFeed implements Feed {
   kind = "live" as const;
   quotes = new Map<string, Quote>();
+  private failures = 0;
+  private retryAt = 0;
+  lastQuoteSuccess: number | null = null;
+  status() { return { failures: this.failures, retryAt: this.retryAt, lastQuoteSuccess: this.lastQuoteSuccess }; }
 
   constructor(
     private client: Broker,
@@ -23,6 +28,7 @@ export class LiveFeed implements Feed {
   ) {}
 
   async tick(): Promise<Map<string, Quote>> {
+    if (Date.now() < this.retryAt) return this.quotes;
     const uni = this.universeTokens();
     const active = this.activeTokens();
     const seen = new Set<string>();
@@ -32,7 +38,16 @@ export class LiveFeed implements Feed {
       seen.add(t.token);
       req.push({ token: t.token, segment: t.segment });
     }
-    const qs = await this.client.quotes(req);
+    let qs: Quote[];
+    try {
+      qs = await this.client.quotes(req);
+      if (req.length && !qs.length) throw new Error("Quote response was empty");
+      this.failures = 0; this.retryAt = 0; this.lastQuoteSuccess = Date.now();
+    } catch (error) {
+      this.failures++; this.retryAt = Date.now() + Math.min(60000, 1000 * 2 ** Math.min(6, this.failures));
+      log("warn", "market_data_retry", { retryAt: this.retryAt, failures: this.failures, error });
+      throw error;
+    }
     const byToken = new Map(uni.concat(active).map((t) => [t.token, t.symbol]));
     for (const q of qs) {
       const symbol = q.symbol || byToken.get(q.token) || q.token;

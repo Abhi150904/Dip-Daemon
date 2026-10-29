@@ -7,14 +7,17 @@ import { addDays, isWeekday } from "../time.js";
 import { fingerprint, parseRun, type RunConfig } from "./engine.js";
 import type { Dataset } from "./data.js";
 let evaluating = false;
+let evaluationWorker: Worker | undefined;
+export async function stopEvaluations() { await evaluationWorker?.terminate(); }
 async function runWorker(dataset: Dataset, config: RunConfig): Promise<unknown> {
     if (evaluating)
         throw new PaperError("An evaluation is already running; retry shortly", 409);
     evaluating = true;
     let worker: Worker | undefined;
     try {
-        const active = new Worker(new URL("./worker.js", import.meta.url), { workerData: { dataset, config }, resourceLimits: { maxOldGenerationSizeMb: 128 } });
+        const active = new Worker(new URL("./worker.js", import.meta.url), { workerData: { dataset, config }, execArgv: [], resourceLimits: { maxOldGenerationSizeMb: 128 } });
         worker = active;
+        evaluationWorker = active;
         return await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new PaperError("Evaluation exceeded its 15-second budget", 408)), 15000);
             active.once("message", result => { clearTimeout(timer); resolve(result); });
@@ -25,6 +28,7 @@ async function runWorker(dataset: Dataset, config: RunConfig): Promise<unknown> 
     finally {
         await worker?.terminate();
         evaluating = false;
+        evaluationWorker = undefined;
     }
 }
 export class Backtests {

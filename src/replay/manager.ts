@@ -95,6 +95,7 @@ export class ReplayManager {
     this.running.delete(date);
     return true;
   }
+  stopAll(): void { for (const date of [...this.running.keys()]) this.stop(date); }
 
   private freePort(): number {
     const used = new Set([...this.running.values()].filter((r) => !r.info.exited).map((r) => r.info.port));

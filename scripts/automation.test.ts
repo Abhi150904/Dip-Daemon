@@ -1,3 +1,4 @@
+import './test-env.js';
 import assert from "node:assert/strict";
 import { test, after, type TestContext } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -70,6 +71,18 @@ function fixture(t: TestContext, changes: Partial<AutomationSettings> = {}, pape
   t.after(() => { if (db.open) db.close(); clock.now = () => Date.now(); });
   return { db, paper, quotes, model, automation, update, snapshot, settings, time, kill: () => { killed = true; } };
 }
+
+test("shutdown invalidates an in-flight automatic scan and refuses policy changes", async t => {
+  const f = fixture(t, { mode: "automatic" });
+  const pending = f.automation.scan();
+  f.automation.stop();
+  await pending;
+  assert.equal(f.paper.orders().length, 0);
+  assert.equal(f.automation.config().settings.mode, "off");
+  assert.throws(() => f.automation.configure({ mode: "automatic" }), /stopping/);
+  await assert.rejects(f.automation.scan(), /stopping/);
+  assert.equal(f.automation.idle, true);
+});
 
 test("provider parsing rejects missing, nonfinite, coerced and invalid choice answers", () => {
   const questions: Record<string, Question> = { probability: { type: "noul", instructions: "" }, score: { type: "score", instructions: "", criteria: ["bad", "good"] }, choice: { type: "choice", instructions: "", criteria: { yes: null, no: null } } };

@@ -1,0 +1,16 @@
+services:
+  dipdaemon:
+    environment:
+      BROKER: zerodha
+      MODEL: mock
+      TRADING_MODE: paper
+      ZERODHA_API_KEY_FILE: /run/secrets/zerodha_api_key
+      ZERODHA_ACCESS_TOKEN_FILE: /run/secrets/zerodha_access_token
+    secrets:
+      - zerodha_api_key
+      - zerodha_access_token
+secrets:
+  zerodha_api_key:
+    file: ./.secrets/zerodha-api-key
+  zerodha_access_token:
+    file: ./.secrets/zerodha-access-token

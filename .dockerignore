@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+.secrets
+.codex
+.agents
+.impeccable
+node_modules
+data
+backups
+dist
+*.db
+*.db-*
+*.log
+kill.switch
