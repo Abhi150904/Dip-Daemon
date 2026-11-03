@@ -121,6 +121,8 @@ test("baseline is explicit and ignores future/incomplete bars", t => {
   assert.equal(baselineSignal(q, bars, f.settings, start, false).action, "BUY");
   const future = { ...bars[0], ts: start, close: 999999, high: 999999 };
   assert.deepEqual(baselineSignal(q, [...bars, future], f.settings, start, false), baselineSignal(q, bars, f.settings, start, false));
+  const preOpen = { ...bars[0], ts: start - 60 * 60_000, volume: 0 };
+  assert.deepEqual(completedBars([preOpen, ...bars], "INFY", start), completedBars(bars, "INFY", start));
   assert.throws(() => completedBars(bars.slice(-10), "INFY", start));
   const broken = bars.map(b => ({ ...b })); broken[10].volume = NaN;
   assert.throws(() => completedBars(broken, "INFY", start));

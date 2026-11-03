@@ -97,7 +97,9 @@ tbody tr:hover{background:#161d24}
 .key-value dt{color:var(--muted)}
 .key-value dd{margin:0;text-align:right}
 .state-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
-.rule-list{padding:0;margin:0;list-style:none}
+.equal-grid>.panel:has(>.rule-list){align-self:start}
+.rule-list{margin:0;list-style:none}
+.rule-list li:first-child{padding-top:0}
 .rule-list li{border-bottom:1px solid var(--border);padding:14px 0;font-size:12px;color:var(--muted)}
 .rule-list li:last-child{border:0}
 .rule-list strong{color:var(--text);font-weight:500;display:block;font-size:13px;margin-bottom:3px}

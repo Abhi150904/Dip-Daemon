@@ -8,6 +8,7 @@ import { LiveFeed } from "./data/feed.js";
 import { buildUniverse } from "./data/universe.js";
 import { contextFor, db, getCapital, getWild, insertEvent, openSession, pruneSnapshots, refreshSession, setWild, todayPnl } from "./db.js";
 import { LiveExecutor } from "./executor/live.js";
+import { ZerodhaClient } from "./zerodha/client.js";
 import type { Executor, Fill } from "./executor/types.js";
 import type { Broker } from "./broker.js";
 import { fillCost } from "./costs.js";
@@ -59,6 +60,10 @@ export class Engine {
   exec: Executor;
   feed: LiveFeed;
   readonly canTrade: boolean;
+  sandboxEntriesArmed = false;
+  liveEntriesArmed = false;
+  get liveBot(): boolean { return this.canTrade && !this.replay && !this.sandboxBot && cfg.tradingMode === "live"; }
+  get sandboxBot(): boolean { return this.canTrade && !this.replay && this.client instanceof ZerodhaClient && this.client.isSandbox; }
   readonly replay: boolean;
   /** Replay seek: fills, stops and flatten only; no Jev, no universe rebuild. */
   seeking = false;
@@ -75,7 +80,7 @@ export class Engine {
   ) {
     this.model = createModel();
     this.replay = opts.replay ?? false;
-    this.canTrade = this.replay;
+    this.canTrade = this.replay || (client instanceof ZerodhaClient && (client.isSandbox ? opts.exec instanceof LiveExecutor : cfg.tradingMode === "live" && !opts.exec));
     if (this.replay && !opts.exec) throw new Error("Replay requires an explicit simulated executor");
     this.exec = opts.exec ?? new LiveExecutor(client);
     this.exec.onFill = (f) => void this.handleFill(f).catch((e) => insertEvent("fill_err", String(e)));
@@ -89,7 +94,12 @@ export class Engine {
   }
 
   universeTokens() {
-    const out = this.universe.map((u) => ({ token: u.token, segment: u.segment, symbol: u.symbol }));
+    // Scanner coverage is independent of strategy price, liquidity and cooldown filters.
+    const members = this.replay ? this.universe : NIFTY50.flatMap(symbol => {
+      const instrument = this.client.getInstrument(symbol);
+      return instrument ? [instrument] : [];
+    });
+    const out = members.map(u => ({ token: u.token, segment: u.segment, symbol: u.symbol }));
     out.push({ token: INDEX_TOKEN, segment: "nse_cm", symbol: INDEX_TOKEN });
     return out;
   }
@@ -113,7 +123,7 @@ export class Engine {
     this.rebuildUniverse();
     this.quotes = await this.feed.tick().catch(() => this.quotes);
     await this.reconcile();
-    try {
+    if (this.replay || cfg.tradingMode !== "paper") try {
       const ctx = await runDailyContext(this.model, this.client.allCash());
       this.halfSizeDay = ctx.halfSize;
     } catch (e) {
@@ -198,7 +208,8 @@ export class Engine {
       if (awaitDecision) await run;
     }
     const intervalMs = cfg.decisionIntervalS * 1000;
-    if (!this.deciding && clock.now() - this.lastDecision >= intervalMs) {
+    const sandbox = this.client instanceof ZerodhaClient && this.client.isSandbox;
+    if ((!sandbox || this.sandboxEntriesArmed) && (!this.liveBot || this.liveEntriesArmed) && (this.replay || cfg.tradingMode !== "paper") && !this.deciding && clock.now() - this.lastDecision >= intervalMs) {
       this.lastDecision = clock.now();
       this.deciding = true;
       const t0 = Date.now();
@@ -479,6 +490,7 @@ export class Engine {
       return;
     }
     try {
+      if ((this.sandboxBot && !this.sandboxEntriesArmed) || (this.liveBot && !this.liveEntriesArmed)) return;
       await this.exec.place({
         symbol: c.symbol,
         token: inst.token,
@@ -626,6 +638,7 @@ export class Engine {
   }
 
   private async placeStop(pos: OpenPosition): Promise<void> {
+    if (this.client instanceof ZerodhaClient && this.client.isSandbox) return;
     const inst = this.client.getInstrument(pos.symbol);
     const stopSide = pos.side === "long" ? "sell" : "buy";
     const tick = this.quotes.get(pos.symbol)?.tickSize ?? 0.05;
@@ -678,6 +691,7 @@ export class Engine {
     if (stopOrd) {
       try {
         await this.exec.cancel(stopOrd);
+        if (stopOrd.status !== "cancelled") return;
       } catch {
         // Cancel failed: the stop may have just filled. Let the poll settle it; retry after the guard.
         return;
@@ -903,83 +917,60 @@ export class Engine {
   /** Adopt live broker positions, place a missing SL-L for each, cancel unknown open entries. */
   async reconcile(): Promise<void> {
     if (!this.canTrade || this.replay) return;
-    try {
-      const pos = await this.client.positions();
-      const ords = await this.client.orders();
-      const mis = pos.filter((p) => p.qty !== 0 && p.product.toUpperCase().includes("MIS"));
-      if (mis.length) {
-        const qs = await this.client.quotes(mis.map((p) => ({ token: p.token, segment: p.segment })));
-        for (const q of qs) this.quotes.set(q.symbol || q.token, q);
-      }
-      for (const o of ords) {
-        const st = o.status.toLowerCase();
-        if (st.includes("open") || st.includes("pending")) {
-          if (o.tag.startsWith("sl-")) continue;
-          await this.client.cancel(o.orderId).catch((e) => insertEvent("reconcile", `cancel ${o.orderId} failed ${e}`));
-          insertEvent("reconcile", `cancelled unknown open order ${o.orderId} ${o.symbol}`);
+    if (!(this.exec instanceof LiveExecutor)) throw new Error("Broker execution requires a reconciled live executor");
+    await this.exec.initialize((brokerPositions, brokerOrders) => {
+      // Rebuild exposure from an owned entry and its exact fills. A missing stop still locks the bot.
+      db.transaction(() => {
+        for (const remote of brokerPositions) {
+          if (remote.product !== "MIS" || db.prepare("SELECT 1 FROM positions WHERE token=? AND segment=? AND closed=0").get(remote.token, remote.segment)) continue;
+          const entries = [...this.exec.orders.values()].filter(order => order.kind === "entry" &&
+            order.token === remote.token && order.segment === remote.segment && order.filledQty > 0);
+          if (entries.length !== 1) continue;
+          const entry = entries[0];
+          if ((entry.side === "buy" ? entry.filledQty : -entry.filledQty) !== remote.qty ||
+              !entry.stop || !entry.target || !entry.stopBps ||
+              db.prepare("SELECT 1 FROM positions WHERE entry_order_id=?").get(String(entry.id))) continue;
+          const fills = db.prepare<[number], { qty: number; average: number }>(
+            "SELECT SUM(f.qty) AS qty, SUM(f.qty*f.price)/SUM(f.qty) AS average FROM fills f JOIN broker_trade_receipts r ON r.fill_id=f.id AND r.order_id=f.order_id WHERE f.order_id=? AND f.simulated=0"
+          ).get(entry.id);
+          if (!fills || fills.qty !== entry.filledQty || !Number.isFinite(fills.average) ||
+              !Number.isFinite(remote.avgPrice) || Math.abs(fills.average - remote.avgPrice) > 0.01) continue;
+          db.prepare("INSERT INTO positions (opened_at, leg, symbol, token, segment, side, qty, entry, stop, target, decision_id, tier, entry_order_id, stop_bps, closed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)")
+            .run(entry.placedAt, entry.leg, entry.symbol, entry.token, entry.segment, entry.side === "buy" ? "long" : "short",
+              fills.qty, fills.average, entry.stop, entry.target, entry.decisionId, entry.tier, String(entry.id), entry.stopBps);
         }
-      }
-      for (const p of mis) {
-        const side = p.qty > 0 ? "long" : "short";
-        const q = this.quotes.get(p.symbol);
-        const px = p.avgPrice || q?.ltp || 0;
-        if (!px) continue;
-        if (cfg.onRestart === "flatten") {
-          await this.client.place({
-            segment: p.segment,
-            tradingSymbol: this.client.getInstrument(p.symbol)?.tradingSymbol ?? p.symbol,
-            token: p.token,
-            side: side === "long" ? "sell" : "buy",
-            qty: Math.abs(p.qty),
-            price: side === "long" ? q?.bid || px : q?.ask || px,
-            tag: "restart-flat",
-          });
-          insertEvent("reconcile", `flattened ${p.symbol} ${p.qty}`);
-          continue;
+      }).immediate();
+      const saved = db.prepare<[], Omit<OpenPosition, "exitingAt" | "closedQty" | "exitNotional" | "exitCost" | "exitReason" | "mfeBps" | "exitVotes">>(
+        "SELECT id, leg, symbol, token, segment, side, qty, entry AS entryPrice, stop, target, opened_at AS openedAt, decision_id AS decisionId, tier, stop_order_id AS stopOrderId, entry_order_id AS entryOrderId, stop_bps AS stopBps, COALESCE(thesis, 2) AS thesis FROM positions WHERE closed=0"
+      ).all();
+      const restored = new Map<string, OpenPosition>();
+      const recoveredStops: [string, number][] = [];
+      if (saved.length !== brokerPositions.length) throw new Error("Broker exposure does not match saved positions");
+      for (const position of saved) {
+        const signedQuantity = position.side === "long" ? position.qty : -position.qty;
+        const remote = brokerPositions.filter(p => p.token === position.token && p.segment === position.segment && p.product === "MIS");
+        const linkedStop = position.stopOrderId ? this.findOrder(position.stopOrderId) : undefined;
+        const ownedStops = [...this.exec.orders.values()].filter(order =>
+          order.kind === "stop" && order.tag === `sl-${position.id}`);
+        const stop = linkedStop ?? (ownedStops.length === 1 ? ownedStops[0] : undefined);
+        const brokerStop = brokerOrders.find(o => o.orderId === stop?.brokerId);
+        const sandboxSoftwareStop = this.client instanceof ZerodhaClient && this.client.isSandbox && !position.stopOrderId && ownedStops.length === 0;
+        if (restored.has(position.symbol) || remote.length !== 1 || remote[0].qty !== signedQuantity ||
+            Math.abs(remote[0].avgPrice - position.entryPrice) > 0.01 || (!sandboxSoftwareStop && (!stop || stop.kind !== "stop" || stop.symbol !== position.symbol ||
+            stop.side !== (position.side === "long" ? "sell" : "buy") || !brokerStop || brokerStop.filledQty !== 0 || brokerStop.qty !== position.qty ||
+            brokerStop.trigger !== position.stop || brokerStop.status.trim().toUpperCase() !== "TRIGGER PENDING"))) {
+          throw new Error("Position or protective stop requires reconciliation for " + position.symbol);
         }
-        const tick = q?.tickSize ?? 0.05;
-        const sb = 12;
-        const stop = stopPrice(side, px, sb, tick);
-        const info = db
-          .prepare(
-            `INSERT INTO positions (opened_at, leg, symbol, token, segment, side, qty, entry, stop, target, decision_id, tier, stop_bps, closed)
-             VALUES (?,?,?,?,?,?,?,?,?,?,NULL,'B',?,0)`,
-          )
-          .run(clock.now(), "equity", p.symbol, p.token, p.segment, side, Math.abs(p.qty), px, stop, targetPrice(side, px, sb, tick), sb);
-        const adopted: OpenPosition = {
-          id: Number(info.lastInsertRowid),
-          leg: "equity",
-          symbol: p.symbol,
-          token: p.token,
-          segment: p.segment,
-          side,
-          qty: Math.abs(p.qty),
-          entryPrice: px,
-          stop,
-          target: targetPrice(side, px, sb, tick),
-          openedAt: clock.now(),
-          decisionId: null,
-          tier: "B",
-          stopOrderId: null,
-          entryOrderId: null,
-          stopBps: sb,
-          thesis: 2,
-          exitingAt: 0,
-          closedQty: 0,
-          exitNotional: 0,
-          exitCost: 0,
-          exitReason: null,
-          mfeBps: 0,
-        exitVotes: 0,
-        };
-        this.positions.set(p.symbol, adopted);
-        const existingStop = ords.find((o) => o.symbol === p.symbol && o.tag.startsWith("sl-") && o.status.toLowerCase().includes("pending"));
-        if (!existingStop) await this.placeStop(adopted);
-        insertEvent("reconcile", `adopted ${p.symbol} ${side} ${Math.abs(p.qty)} @${px}`);
+        const stopOrderId = stop ? String(stop.id) : null;
+        if (stopOrderId && position.stopOrderId !== stopOrderId) recoveredStops.push([stopOrderId, position.id]);
+        restored.set(position.symbol, { ...position, stopOrderId, exitingAt: 0, closedQty: 0, exitNotional: 0, exitCost: 0, exitReason: null, mfeBps: 0, exitVotes: 0 });
       }
-    } catch (e) {
-      await alert("session", `reconcile failed ${e}`);
-    }
+      db.transaction(() => {
+        const link = db.prepare("UPDATE positions SET stop_order_id=? WHERE id=?");
+        for (const [stopId, positionId] of recoveredStops) link.run(stopId, positionId);
+      }).immediate();
+      this.positions = restored;
+    });
   }
 
   usedNotional(): number {

@@ -55,7 +55,7 @@ export class JevModel implements Model {
         raw = await Promise.race([this.call(state, questions, ac.signal), deadline]);
       }
       const latencyMs = Date.now() - t0;
-      const parsed = parseEvaluation(raw, questions);
+      const parsed = parseEvaluation(raw, questions, cfg.aiGatewayKey ? `${cfg.aiGatewayModel}-unversioned` : undefined);
       persist(parsed, stage, symbol, latencyMs);
       return { ...parsed, latencyMs, ok: true };
     } catch (e) {
@@ -84,7 +84,7 @@ export class JevModel implements Model {
     const state: unknown = JSON.parse(JSON.stringify(rawState));
     if (cfg.aiGatewayKey) {
       return evaluate({
-        model: "typesafe-ai/jev",
+        model: cfg.aiGatewayModel,
         state,
         questions: toSdkQuestions(questions),
         abortSignal,

@@ -12,6 +12,27 @@ const panel = (title, content, note = '') => `<section class="panel"><div class=
 const table = (heads, rows, copy = 'Nothing to show yet.') => rows.length ? `<div class="table-wrap"><table><thead><tr>${heads.map(h => `<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : empty(copy);
 function slot(id, html) { const el = $(id); if (el && !el.contains(document.activeElement))
     el.innerHTML = html; }
+function updateSignals(html) {
+    const panel = $('signals');
+    if (!panel) return;
+    const active = document.activeElement;
+    const focusedId = active?.closest('details[data-signal-id]')?.dataset.signalId;
+    const focusedAction = panel.contains(active) && active.matches('button[data-action]') ? active.dataset : null;
+    const opened = new Set([...panel.querySelectorAll('details[open]')].map(detail => detail.dataset.signalId));
+    const scrollLeft = panel.querySelector('.table-wrap')?.scrollLeft ?? 0;
+    panel.innerHTML = html;
+    const tableWrap = panel.querySelector('.table-wrap');
+    if (tableWrap) tableWrap.scrollLeft = scrollLeft;
+    for (const detail of panel.querySelectorAll('details[data-signal-id]')) {
+        detail.open = opened.has(detail.dataset.signalId);
+        if (detail.dataset.signalId === focusedId) detail.querySelector('summary')?.focus({ preventScroll: true });
+    }
+    if (focusedAction) {
+        const replacement = [...panel.querySelectorAll('button[data-action]')].find(button =>
+            button.dataset.action === focusedAction.action && button.dataset.id === focusedAction.id);
+        replacement?.focus({ preventScroll: true });
+    }
+}
 function feedback(copy, error = false) { $('feedback').hidden = false; $('feedback').className = `feedback${error ? ' error' : ''}`; $('feedback').textContent = copy; }
 class ApiError extends Error {
     constructor(message, status) { super(message); this.status = status; }
@@ -102,7 +123,7 @@ else if (!event.target.form)
     renderContent(); }
 function positions() { return table(['Symbol', 'Shares', 'Avg. entry', 'Mark', 'Stop-loss', 'Unrealized net', ''], data.positions.map(p => [e(p.symbol), number(p.qty), cash(p.averageEntryPaise), cash(p.marketValuePaise === null ? null : p.mark_paise), cash(p.stop_paise), cash(p.unrealizedPnlPaise, true), p.availableShares ? button('close', p.symbol, `Close ${p.availableShares} shares`) : 'Shares reserved']), 'No open positions. Place a paper order to get started.'); }
 function orders() { const filter = $('order-filter')?.value || 'all'; return table(['Time · IST', 'Symbol / side', 'Type', 'Shares', 'Price', 'Status', 'Details / actions'], data.orders.filter(o => filter === 'all' || o.status === filter).slice().reverse().map(o => [time(o.created_at, true), `${e(o.symbol)}<br>${badge(o.side)}`, e(o.type), number(o.qty), cash(o.fill_paise ?? o.limit_paise), badge(o.status), o.status === 'open' ? `${button('cancel', o.id, 'Cancel')}<details class="detail"><summary>Modify limit</summary><form class="inline-modify" data-modify="${e(o.id)}"><input name="limitPrice" aria-label="New limit price for ${e(o.symbol)}" type="number" min="0.01" step="0.01" value="${o.limit_paise / 100}" required><button data-account class="button secondary small-button">Save</button></form></details>` : e(o.reason)])); }
-function signals(compact = false) { return table(['Symbol / action', 'Score', 'Status', 'Reason / review'], data.signals.slice(0, compact ? 5 : 100).map(s => [`${e(s.symbol)}<br>${badge(s.action.toLowerCase())}`, number(s.signal.score * 100, 1) + '%', badge(s.status), `<div class="reason">${e(s.reason)}<details class="detail"><summary>Decision details</summary><p>Strategy: ${e(s.strategy)} · ${e(s.signal.strategyVersion)}</p><p>Model: ${e(s.signal.modelVersion)}</p><p>Quote: ${time(s.signal.quoteTs, true)}</p><p>Expires: ${time(s.signal.expiresAt, true)}</p><p>Entry: ${money(s.signal.entryPrice == null ? null : Math.round(s.signal.entryPrice * 100))} · Stop: ${money(s.signal.stopLoss == null ? null : Math.round(s.signal.stopLoss * 100))}</p></details>${!compact && s.status === 'pending' ? button('approve', s.id, `Approve ${s.action} ${s.symbol}`) + button('reject', s.id, `Reject ${s.symbol}`) : ''}</div>`]), 'No strategy decisions yet. Run a market scan.'); }
+function signals(compact = false) { return table(['Symbol / action', 'Score', 'Status', 'Reason / review'], data.signals.slice(0, compact ? 5 : 100).map(s => [`${e(s.symbol)}<br>${badge(s.action.toLowerCase())}`, number(s.signal.score * 100, 1) + '%', badge(s.status), `<div class="reason">${e(s.reason)}<details class="detail" data-signal-id="${e(s.id)}"><summary>Decision details</summary><p>Strategy: ${e(s.strategy)} · ${e(s.signal.strategyVersion)}</p><p>Model: ${e(s.signal.modelVersion)}</p><p>Quote: ${time(s.signal.quoteTs, true)}</p><p>Expires: ${time(s.signal.expiresAt, true)}</p><p>Entry: ${money(s.signal.entryPrice == null ? null : Math.round(s.signal.entryPrice * 100))} · Stop: ${money(s.signal.stopLoss == null ? null : Math.round(s.signal.stopLoss * 100))}</p></details>${!compact && s.status === 'pending' ? button('approve', s.id, `Approve ${s.action} ${s.symbol}`) + button('reject', s.id, `Reject ${s.symbol}`) : ''}</div>`]), 'No strategy decisions yet. Run a market scan.'); }
 function activity() {
     return [...data.events, ...data.strategyEvents].sort((a, b) => b.ts - a.ts).slice(0, page === 'overview' ? 6 : 20).map(ev => {
         let detail = ev.detail;
@@ -122,7 +143,7 @@ function renderContent() {
     if ($('positions'))
         slot('positions', positions());
     if ($('signals'))
-        slot('signals', signals(page === 'overview'));
+        updateSignals(signals(page === 'overview'));
     if ($('orders'))
         slot('orders', orders());
     if ($('activity'))

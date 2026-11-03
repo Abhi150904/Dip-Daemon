@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 import { test } from "node:test";
-import type { BrokerOrder, BrokerPosition, PlaceResult } from "../src/broker.js";
+import type { Broker, BrokerOrder, BrokerPosition, PlaceResult } from "../src/broker.js";
 import type { Bar } from "../src/types.js";
 
 test("observe lifecycle stays isolated with broker positions and pending orders", async (t) => {
@@ -33,6 +33,7 @@ test("observe lifecycle stays isolated with broker positions and pending orders"
   closeDatabase = () => db.close();
   const { cfg } = await import("../src/config.js");
   const { Engine } = await import("../src/engine.js");
+  const { LiveExecutor } = await import("../src/executor/live.js");
   const { SimBroker } = await import("../src/replay/sim.js");
   const { MockModel } = await import("../src/model/mock.js");
   const { clock, useVirtualClock, istDateStr } = await import("../src/time.js");
@@ -67,10 +68,94 @@ test("observe lifecycle stays isolated with broker positions and pending orders"
     override async modify(): Promise<never> {
       this.mutations.push("modify"); throw new Error("Unexpected broker modify");
     }
-    override async cancel(): Promise<never> {
+    override async cancel(): Promise<void> {
       this.mutations.push("cancel"); throw new Error("Unexpected broker cancel");
     }
   }
+
+  await t.test("scanner receives quotes for stocks excluded by strategy price filters", async () => {
+    const symbol = "WIPRO";
+    bars.set(symbol, [{ symbol, ts: clock.now(), open: 250, high: 251, low: 249, close: 250, volume: 10000 }]);
+    const engine = new Engine(new BrokerSpy(bars));
+    await engine.start();
+    assert.equal(engine.quotes.get(symbol)?.ltp, 250);
+    assert.equal(engine.universe.some(member => member.symbol === symbol), false);
+    await engine.feed.tick();
+    assert.equal(engine.quotes.get(symbol)?.ltp, 250);
+    engine.shutdown();
+    bars.delete(symbol);
+  });
+
+  await t.test("lost broker acknowledgement blocks resubmission and recovers exactly one order", async () => {
+    let submissions = 0;
+    let brokerOrder: BrokerOrder | undefined;
+    let offlinePosition = false;
+    class LostResponseBroker extends BrokerSpy {
+      override async place(args?: Parameters<Broker["place"]>[0]): Promise<PlaceResult> {
+        assert.ok(args);
+        submissions++;
+        brokerOrder = { orderId: "recovery-fixture", symbol: "INFY", side: "buy", qty: 3, price: 100,
+          filledQty: 0, trigger: 0, product: "MIS", status: "OPEN", tag: args.tag };
+        throw new Error("Lost broker response");
+      }
+      override async orders(): Promise<BrokerOrder[]> { return brokerOrder ? [brokerOrder] : []; }
+      override async positions(): Promise<BrokerPosition[]> {
+        return offlinePosition ? [{ symbol: "INFY", token: "1", segment: "nse_cm", qty: 2, avgPrice: 99.5, product: "MIS" }] : [];
+      }
+      async orderTrades() { return [{ id: "t1", quantity: 1, price: 99 }, { id: "t2", quantity: 1, price: 100 }]; }
+      override async cancel(): Promise<void> { if (brokerOrder) brokerOrder.status = "CANCEL PENDING"; }
+    }
+    const broker = new LostResponseBroker(bars);
+    const intent = { kind: "entry", symbol: "INFY", tradingSymbol: "INFY", token: "1", segment: "nse_cm",
+      side: "buy", qty: 3, price: 100, tag: "fixture", decisionId: null, leg: "equity", tier: "A", stop: 98, target: 103, stopBps: 150 } as const;
+    const executor = new LiveExecutor(broker);
+    await assert.rejects(executor.place(intent), /startup reconciliation is incomplete/);
+    await executor.initialize();
+    await assert.rejects(executor.place(intent), /Lost broker response/);
+    await assert.rejects(executor.place(intent), /Unresolved broker submission/);
+    const restarted = new LiveExecutor(broker);
+    await assert.rejects(restarted.place(intent), /startup reconciliation is incomplete/);
+    await restarted.initialize();
+    await restarted.recoverSubmissions();
+    assert.equal(submissions, 1);
+    assert.deepEqual([...restarted.orders.values()].map(order => order.brokerId), ["recovery-fixture"]);
+    const recoveredOrder = [...restarted.orders.values()][0];
+    db.prepare("INSERT INTO fills (ts,order_id,qty,simulated) VALUES (?,?,?,0)").run(clock.now(), recoveredOrder.id, 1);
+    const coldStart = new LiveExecutor(broker);
+    await assert.rejects(coldStart.initialize(), /does not match saved order and fills/);
+    await assert.rejects(coldStart.place(intent), /startup reconciliation is incomplete/);
+    assert.equal(coldStart.orders.get(recoveredOrder.id)?.filledQty, 1);
+    db.prepare("DELETE FROM fills WHERE order_id=?").run(recoveredOrder.id);
+    await restarted.cancel(recoveredOrder);
+    assert.ok(brokerOrder);
+    brokerOrder.filledQty = 2;
+    await restarted.tick(new Map());
+    assert.equal(restarted.orders.has(recoveredOrder.id), true);
+    brokerOrder.status = "CANCELLED";
+    vclock.set(clock.now() + 2_001);
+    await restarted.tick(new Map());
+    assert.equal(recoveredOrder.status, "cancelled");
+    assert.equal(restarted.orders.has(recoveredOrder.id), false);
+    assert.deepEqual(db.prepare("SELECT qty, price FROM fills WHERE order_id=? ORDER BY id").all(recoveredOrder.id), [{ qty: 1, price: 99 }, { qty: 1, price: 100 }]);
+    db.prepare("DELETE FROM broker_trade_receipts WHERE order_id=?").run(recoveredOrder.id);
+    db.prepare("DELETE FROM fills WHERE order_id=?").run(recoveredOrder.id);
+    db.prepare("UPDATE orders SET status='open' WHERE id=?").run(recoveredOrder.id);
+    offlinePosition = true;
+    for (let restart = 0; restart < 2; restart++) {
+      const recovering = new LiveExecutor(broker);
+      await assert.rejects(recovering.initialize(), /Open broker positions require reconciliation/);
+      await assert.rejects(recovering.place(intent), /startup reconciliation is incomplete/);
+      const recoveringEngine = new Engine(broker, { exec: new LiveExecutor(broker) });
+      Object.defineProperty(recoveringEngine, "canTrade", { value: true });
+      await assert.rejects(recoveringEngine.reconcile(), /protective stop requires reconciliation/);
+    }
+    assert.deepEqual(db.prepare("SELECT qty, entry, stop_order_id FROM positions WHERE entry_order_id=?").all(String(recoveredOrder.id)),
+      [{ qty: 2, entry: 99.5, stop_order_id: null }]);
+    assert.deepEqual(db.prepare("SELECT qty, price FROM fills WHERE order_id=? ORDER BY id").all(recoveredOrder.id), [{ qty: 1, price: 99 }, { qty: 1, price: 100 }]);
+    assert.equal(submissions, 1);
+    db.prepare("DELETE FROM broker_trade_receipts WHERE order_id=?").run(recoveredOrder.id);
+    db.prepare("DELETE FROM fills WHERE order_id=?").run(recoveredOrder.id);
+  });
 
   for (const model of ["mock", "jev"] as const) {
     for (const allowMock of [false, true]) {

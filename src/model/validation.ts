@@ -28,7 +28,7 @@ export function record(value: unknown): Record<string, unknown> {
 }
 
 /** Normalize provider aliases, but never coerce strings or invent missing answers. */
-export function parseEvaluation(raw: unknown, questions: Record<string, Question>): Omit<EvalResult, "latencyMs" | "ok"> {
+export function parseEvaluation(raw: unknown, questions: Record<string, Question>, fallbackModelId = "typesafe-ai/jev-unversioned"): Omit<EvalResult, "latencyMs" | "ok"> {
   const root = record(raw);
   const input = record(root.answers ?? root.data);
   const confidence = root.providerMetadata ? record(record(root.providerMetadata).typesafe ?? {}) : {};
@@ -60,7 +60,7 @@ export function parseEvaluation(raw: unknown, questions: Record<string, Question
   const tokens = usage.inputTokens ?? usage.input_tokens ?? usage.totalTokens ?? 0;
   if (!finite(tokens, 0, Number.MAX_SAFE_INTEGER) || !Number.isInteger(tokens)) throw new Error("Invalid model usage");
   const response = root.response ? record(root.response) : {};
-  const modelId = response.modelId ?? root.model ?? "typesafe-ai/jev-unversioned";
+  const modelId = response.modelId ?? root.model ?? fallbackModelId;
   if (typeof modelId !== "string" || modelId.length === 0 || modelId.length > 200) throw new Error("Invalid model identity");
   const result = { answers, tokens, modelId };
   if (!validEvaluation({ ...result, ok: true, latencyMs: 0 }, questions)) throw new Error("Incomplete or invalid model response");

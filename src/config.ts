@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
-import { parseTradingMode, requireSupportedMode } from "./execution-policy.js";
+import { parseTradingMode } from "./execution-policy.js";
 import { paperSettings } from "./portfolio/types.js";
 import { automationSettings } from "./strategy/signals.js";
 import { operationsSettings, secret } from "./ops/settings.js";
@@ -10,7 +10,7 @@ import { protectSecrets } from "./ops/log.js";
 loadEnv();
 
 const tradingMode = parseTradingMode(process.env.TRADING_MODE);
-requireSupportedMode(tradingMode);
+
 
 export type OptionsMode = "on" | "off";
 export type ModelName = "jev" | "mock";
@@ -96,6 +96,7 @@ export const cfg = {
   zerodhaAccessToken: secret(process.env, "ZERODHA_ACCESS_TOKEN"),
   zerodhaRequestToken: secret(process.env, "ZERODHA_REQUEST_TOKEN"),
   aiGatewayKey: secret(process.env, "AI_GATEWAY_API_KEY"),
+  aiGatewayModel: str("AI_GATEWAY_MODEL", "typesafe-ai/jev"),
   typesafeKey: secret(process.env, "TYPESAFE_AI_API_KEY"),
   model: parseModelName(str("MODEL", "mock")),
   optionsMode: str("OPTIONS_MODE", "off") === "on" ? "on" : "off",
@@ -118,7 +119,7 @@ export const cfg = {
     .filter(Boolean),
   telegramBotToken: secret(process.env, "TELEGRAM_BOT_TOKEN"),
   telegramChatId: str("TELEGRAM_CHAT_ID"),
-  dbPath: str("DB_PATH", "data/harness.db"),
+  dbPath: str("DB_PATH", tradingMode === "live" ? "data/zerodha-live.db" : "data/harness.db"),
   host: str("HOST", "127.0.0.1"),
   port: num("PORT", 8080),
   killPath: str("KILL_PATH", "kill.switch"),
@@ -130,6 +131,10 @@ export const cfg = {
   warmupDays: num("WARMUP_DAYS", 25),
   maxRequotes: num("MAX_REQUOTES", 3),
 };
+
+if (tradingMode === "live" && (cfg.broker !== "zerodha" || !cfg.zerodhaApiKey || !cfg.zerodhaAccessToken || !cfg.operations.authToken || cfg.host !== "127.0.0.1" || cfg.optionsMode !== "off" || cfg.model === "mock")) {
+  throw new Error("Live mode requires Zerodha credentials, dashboard authentication, HOST=127.0.0.1, OPTIONS_MODE=off and MODEL=jev");
+}
 
 protectSecrets([cfg.operations.authToken, cfg.kotakAccessToken, cfg.kotakMpin, cfg.kotakTotpSecret, cfg.zerodhaApiKey, cfg.zerodhaApiSecret, cfg.zerodhaAccessToken, cfg.zerodhaRequestToken, cfg.aiGatewayKey, cfg.typesafeKey, cfg.telegramBotToken]);
 

@@ -167,17 +167,30 @@ export class PaperAutomation {
       for (const q of snapshot.quotes) {
         if (q.segment !== "nse_cm" || !Number.isSafeInteger(q.ts) || q.ts > this.lastScan || this.lastScan - q.ts > (this.paper?.settings.quoteMaxAgeMs ?? 15000) || !Number.isFinite(q.ltp) || q.ltp <= 0) throw new PaperError("Stale or invalid scan market data");
       }
+      const skipped = new Map<string, string[]>();
+      const skipSummary = () => [...skipped].map(([reason, symbols]) => `${reason} (${symbols.join(", ")})`).join(". ");
       const generate = async (): Promise<Signal[]> => {
         if (settings.strategy === "jev") {
           const { aiSignals } = await import("../strategy/ai-paper.js");
           return aiSignals(snapshot, positions, settings, this.model, this.lastScan);
         }
-        return snapshot.quotes.map(q => {
-          const signal = baselineSignal(q, snapshot.bars.get(q.symbol) ?? [], settings, this.lastScan, positions.some(p => p.symbol === q.symbol));
+        const signals = snapshot.quotes.flatMap(q => {
+          let signal: Signal;
+          try {
+            signal = baselineSignal(q, snapshot.bars.get(q.symbol) ?? [], settings, this.lastScan, positions.some(p => p.symbol === q.symbol));
+          } catch (error) {
+            if (!(error instanceof PaperError)) throw error;
+            const symbols = skipped.get(error.message) ?? [];
+            symbols.push(q.symbol);
+            skipped.set(error.message, symbols);
+            return [];
+          }
           const p = positions.find(p => p.symbol === q.symbol);
-          if (p && this.lastScan - p.opened_at >= settings.maxHoldMinutes * 60000) return { ...signal, action: "SELL" as const, entryPrice: q.bid || q.ltp, score: 1, reason: "Maximum strategy holding time reached" };
-          return signal;
+          if (p && this.lastScan - p.opened_at >= settings.maxHoldMinutes * 60000) return [{ ...signal, action: "SELL" as const, entryPrice: q.bid || q.ltp, score: 1, reason: "Maximum strategy holding time reached" }];
+          return [signal];
         });
+        if (!signals.length) throw new PaperError(`No symbols had usable candles. ${skipSummary()}`);
+        return signals;
       };
       const generated = await Promise.race([generate(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new PaperError("Strategy/model scan timed out")), settings.modelTimeoutMs); })]);
       const fingerprint = createHash("sha256").update(JSON.stringify({ quotes: snapshot.quotes, bars: [...snapshot.bars], index: snapshot.index })).digest("hex");
@@ -195,7 +208,7 @@ export class PaperAutomation {
           this.event(row, "generated", JSON.stringify({ signal, revision, source: snapshot.source ?? "unspecified", snapshotHash: fingerprint }));
           if (status === "pending" && settings.mode === "automatic") this.execute(row);
         }
-        this.db.prepare("UPDATE paper_strategy_runs SET status='completed',completed_at=? WHERE id=?").run(clock.now(), run);
+        this.db.prepare("UPDATE paper_strategy_runs SET status='completed',completed_at=?,reason=? WHERE id=?").run(clock.now(), skipped.size ? `Skipped symbols: ${skipSummary()}` : "", run);
       }).immediate();
     } catch (error) {
       const updated = this.db.prepare("UPDATE paper_strategy_runs SET status='failed',completed_at=?,reason=? WHERE id=?").run(clock.now(), error instanceof PaperError ? error.message : "Strategy failed; no new orders", run);

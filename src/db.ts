@@ -76,6 +76,12 @@ CREATE TABLE IF NOT EXISTS orders (
   stop_bps REAL
 );
 
+CREATE TABLE IF NOT EXISTS broker_submission_intents (
+  tag TEXT PRIMARY KEY,
+  placed_at INTEGER NOT NULL,
+  intent TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS fills (
   id INTEGER PRIMARY KEY,
   ts INTEGER NOT NULL,
@@ -86,6 +92,13 @@ CREATE TABLE IF NOT EXISTS fills (
   price REAL,
   cost REAL,
   simulated INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS broker_trade_receipts (
+  order_id INTEGER NOT NULL,
+  trade_id TEXT NOT NULL,
+  fill_id INTEGER NOT NULL,
+  PRIMARY KEY (order_id, trade_id)
 );
 
 CREATE TABLE IF NOT EXISTS trades (

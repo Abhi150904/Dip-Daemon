@@ -9,6 +9,7 @@ import type { BookLevel, Instrument, OptionContract, Quote, Side } from "../type
 import { buildInstruments } from "./instruments.js";
 
 const BASE = "https://api.kite.trade";
+const SANDBOX = "https://sandbox.kite.trade";
 
 type Bucket = "quote" | "hist" | "order" | "other";
 type Body = { form?: Record<string, string>; json?: unknown };
@@ -48,15 +49,25 @@ export class ZerodhaClient implements Broker {
   constructor(
     private onSessionLost?: () => void,
     private accessToken = cfg.zerodhaAccessToken,
+    private readonly sandbox = false,
   ) {}
+
+  static sandboxClient(token: string): ZerodhaClient {
+    if (!token.trim()) throw new Error("A Kite sandbox access token is required");
+    return new ZerodhaClient(undefined, token.trim(), true);
+  }
+
+  get isSandbox(): boolean { return this.sandbox; }
+  private get root(): string { return this.sandbox ? SANDBOX : BASE; }
 
   async login(): Promise<Session> {
     if (this.dead) throw new ZerodhaError("kite session expired: run pnpm zerodha:login, set ZERODHA_ACCESS_TOKEN, restart", 403, "TokenException");
     try {
       if (!this.accessToken) this.accessToken = await exchangeRequestToken(cfg.zerodhaApiKey, cfg.zerodhaRequestToken, cfg.zerodhaApiSecret);
-      const auth = `token ${cfg.zerodhaApiKey}:${this.accessToken}`;
-      const profile = (await kite("GET", "/user/profile", auth)) as { user_id?: string } | null;
-      this.session = { baseUrl: BASE, auth, sid: String(profile?.user_id ?? "") };
+      const auth = `token ${this.sandbox ? "sandboxdemo" : cfg.zerodhaApiKey}:${this.accessToken}`;
+      const profile = (await kite("GET", this.sandbox ? "/oms/user/profile" : "/user/profile", auth, {}, this.root)) as { user_id?: string } | null;
+      if (!profile?.user_id) throw new Error("Kite did not confirm the account identity");
+      this.session = { baseUrl: this.root, auth, sid: profile.user_id };
       this.lastOk = Date.now();
       return this.session;
     } catch (e) {
@@ -70,8 +81,21 @@ export class ZerodhaClient implements Broker {
   }
 
   async loadScrips(): Promise<void> {
-    const { cash, indexToken, options } = buildInstruments(await this.csv("/instruments/NSE"), await this.csv("/instruments/NFO"));
-    if (!cash.length || !indexToken) throw new ZerodhaError(`instruments: ${cash.length} NSE equities, NIFTY 50 ${indexToken ? "found" : "missing"}`, 500);
+    const nse = await this.csv("/instruments/NSE");
+    const nfo = this.sandbox ? "" : await this.csv("/instruments/NFO");
+    const { cash, indexToken, options } = buildInstruments(nse, nfo);
+    let resolvedIndexToken = indexToken;
+    if (this.sandbox && !resolvedIndexToken) {
+      const key = "NSE:NIFTY 50";
+      try {
+        const data = await this.call("GET", `/quote?${quoteQuery([key])}`, "quote") as Record<string, { instrument_token?: unknown }> | null;
+        const token = data?.[key]?.instrument_token;
+        if ((typeof token === "number" || typeof token === "string") && /^[1-9]\d*$/.test(String(token))) resolvedIndexToken = String(token);
+      } catch (error) {
+        if (!(error instanceof ZerodhaError) || error.status !== 404) throw error;
+      }
+    }
+    if (!cash.length || (!this.sandbox && !resolvedIndexToken)) throw new ZerodhaError(`instruments: ${cash.length} NSE equities, NIFTY 50 ${resolvedIndexToken ? "found" : "missing"}`, 500);
     this.scrips.clear();
     this.byToken.clear();
     for (const i of cash) {
@@ -79,9 +103,11 @@ export class ZerodhaClient implements Broker {
       this.byToken.set(i.token, i);
     }
     const index: Instrument = { symbol: INDEX_TOKEN, token: INDEX_TOKEN, segment: "nse_cm", tickSize: 0.05, lotSize: 1, tradingSymbol: "NIFTY 50", name: "Nifty 50" };
-    this.scrips.set(INDEX_TOKEN, index);
-    this.byToken.set(INDEX_TOKEN, index);
-    this.indexToken = indexToken;
+    if (resolvedIndexToken) {
+      this.scrips.set(INDEX_TOKEN, index);
+      this.byToken.set(INDEX_TOKEN, index);
+    }
+    this.indexToken = resolvedIndexToken;
     this.chain = options;
     this.foScrips = options.map((c) => ({
       symbol: c.symbol,
@@ -147,6 +173,11 @@ export class ZerodhaClient implements Broker {
   }
 
   async marginRequired(args: Parameters<Broker["marginRequired"]>[0]): Promise<MarginCheck> {
+    if (this.sandbox) {
+      const { available } = await this.limits();
+      const required = args.qty * args.price;
+      return { available, required, ok: Number.isFinite(available) && available >= required, raw: null };
+    }
     const order = {
       exchange: exchangeOf(args.segment),
       tradingsymbol: args.tradingSymbol,
@@ -164,7 +195,7 @@ export class ZerodhaClient implements Broker {
   }
 
   async place(args: Parameters<Broker["place"]>[0]): Promise<PlaceResult> {
-    blockLiveOrder();
+    if (!this.sandbox && cfg.tradingMode !== "live") blockLiveOrder();
     try {
       const data = (await this.call("POST", "/orders/regular", "order", { form: orderForm(args) })) as { order_id?: string } | null;
       return { orderId: data?.order_id ? String(data.order_id) : null, raw: data };
@@ -176,17 +207,32 @@ export class ZerodhaClient implements Broker {
   }
 
   async modify(args: Parameters<Broker["modify"]>[0]): Promise<unknown> {
-    blockLiveOrder();
+    if (!this.sandbox && cfg.tradingMode !== "live") blockLiveOrder();
     return this.call("PUT", `/orders/regular/${args.orderId}`, "order", { form: modifyForm(args) });
   }
 
   async cancel(orderId: string): Promise<unknown> {
-    blockLiveOrder();
+    if (!this.sandbox && cfg.tradingMode !== "live") blockLiveOrder();
     return this.call("DELETE", `/orders/regular/${orderId}`, "order");
   }
 
   async orders(): Promise<BrokerOrder[]> {
     return parseOrders(await this.call("GET", "/orders", "other"));
+  }
+
+  async orderTrades(orderId: string) {
+    if (!/^\d+$/.test(orderId)) throw new Error("Invalid Kite order ID");
+    const data = await this.call("GET", `/orders/${orderId}/trades`, "other");
+    if (!Array.isArray(data)) throw new Error("Invalid Kite trade list");
+    return data.map((row: unknown) => {
+      if (!row || typeof row !== "object" || !("order_id" in row) || row.order_id !== orderId ||
+          !("trade_id" in row) || typeof row.trade_id !== "string" || !row.trade_id ||
+          !("quantity" in row) || typeof row.quantity !== "number" || !Number.isSafeInteger(row.quantity) || row.quantity <= 0 ||
+          !("average_price" in row) || typeof row.average_price !== "number" || !Number.isFinite(row.average_price) || row.average_price <= 0) {
+        throw new Error("Invalid Kite trade record");
+      }
+      return { id: row.trade_id, quantity: row.quantity, price: row.average_price };
+    });
   }
 
   async positions(): Promise<BrokerPosition[]> {
@@ -202,7 +248,7 @@ export class ZerodhaClient implements Broker {
     const sess = await this.ensureSession();
     await this.lim[bucket].takeOrder();
     try {
-      const data = await kite(method, path, sess.auth, body);
+      const data = await kite(method, this.sandbox ? "/oms" + path : path, sess.auth, body, this.root);
       this.lastOk = Date.now();
       this.onRaw?.(path.split("?")[0], data);
       return data;
@@ -220,13 +266,13 @@ export class ZerodhaClient implements Broker {
   private async csv(path: string): Promise<string> {
     const sess = await this.ensureSession();
     await this.lim.other.takeOrder();
-    const res = await fetch(BASE + path, { headers: { "X-Kite-Version": "3", Authorization: sess.auth }, signal: AbortSignal.timeout(60_000) });
+    const res = await fetch(this.root + path, { headers: { "X-Kite-Version": "3", Authorization: sess.auth }, redirect: "error", signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new ZerodhaError(`kite ${res.status} ${path}`, res.status);
     return res.text();
   }
 }
 
-async function kite(method: string, path: string, auth: string, body: Body = {}): Promise<unknown> {
+async function kite(method: string, path: string, auth: string, body: Body = {}, root = BASE): Promise<unknown> {
   const headers: Record<string, string> = { "X-Kite-Version": "3" };
   if (auth) headers.Authorization = auth;
   let payload: string | undefined;
@@ -237,7 +283,7 @@ async function kite(method: string, path: string, auth: string, body: Body = {})
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body.json);
   }
-  const res = await fetch(BASE + path, { method, headers, body: payload, signal: AbortSignal.timeout(20_000) });
+  const res = await fetch(root + path, { method, headers, body: payload, redirect: "error", signal: AbortSignal.timeout(20_000) });
   const text = await res.text();
   let json: Record<string, unknown> = {};
   try {

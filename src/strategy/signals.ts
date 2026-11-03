@@ -1,6 +1,6 @@
 import { PaperError } from "../portfolio/types.js";
 import type { Bar, Quote } from "../types.js";
-import { istDateStr } from "../time.js";
+import { istDateStr, minutesOfDay } from "../time.js";
 
 export interface AutomationSettings {
   mode: "off" | "approval" | "automatic";
@@ -75,7 +75,8 @@ export function validSignal(value: Signal): boolean {
 }
 
 export function completedBars(bars: readonly Bar[], symbol: string, now: number): Bar[] {
-  const eligible = bars.filter(b => b.ts + 60000 <= now && istDateStr(b.ts) === istDateStr(now));
+  const date = istDateStr(now);
+  const eligible = bars.filter(b => b.ts + 60000 <= now && istDateStr(b.ts) === date && minutesOfDay(b.ts) >= 555);
   for (let i = 0; i < eligible.length; i++) {
     const b = eligible[i];
     if (b.symbol !== symbol || !Number.isSafeInteger(b.ts) || (i && b.ts - eligible[i - 1].ts !== 60000) ||

@@ -26,6 +26,9 @@
     "auth:token": "tsx scripts/auth-token.ts",
     "backup": "tsx scripts/backup.ts",
     "probe": "tsx scripts/probe.ts",
+    "zerodha:preflight": "tsx scripts/zerodha-preflight.ts",
+    "zerodha:sandbox": "node scripts/zerodha-sandbox.mjs",
+    "zerodha:sandbox-bot": "tsx scripts/zerodha-sandbox-bot.ts",
     "replay": "tsx scripts/replay.ts",
     "zerodha:login": "tsx scripts/zerodha-login.ts",
     "typecheck": "tsc --noEmit"

@@ -1,68 +1,83 @@
 # DipDaemon
 
-**Scan. Simulate. Trade.**
+DipDaemon is a local trading platform for NSE equities. It brings market scanning, strategy evaluation, order execution, and trade review into one browser dashboard. Run a credential-free demo, paper trade with Zerodha quotes, or connect a Zerodha account for live intraday execution.
 
-DipDaemon is an NSE trading research platform derived from [WarrenDuffer](https://github.com/arimanyus/warrenduffer). Its inherited TypeScript engine combines market features, Jev ranking, deterministic risk gates, SQLite records, historical replay, and a local dashboard.
+## What you can do
 
-Phases 0–5 provide safety controls, persistent paper trading, strategy automation, a browser workspace and repeatable local strategy evaluation. **Startup defaults to `TRADING_MODE=observe`; `TRADING_MODE=paper` enables the isolated virtual account. Strategy execution defaults off and requires approval/automatic opt-in. Both real broker clients still block order placement, modification, and cancellation.** Credentials, Jev, and the legacy mock override cannot enable real orders. `live` configuration fails at startup. Historical replay retains its separate simulated executor.
+| Workflow | What DipDaemon provides |
+| --- | --- |
+| Scan the market | Review quotes and strategy decisions across the configured universe. |
+| Evaluate signals | Compare rule-based VWAP momentum with a model-assisted workflow. |
+| Paper trade | Approve signals individually or automate simulated orders. Track virtual cash, orders, positions, and P&L. |
+| Backtest and review | Compare strategies on saved datasets with holdout results. Review closed trades, estimated fees, and exit reasons in the journal. |
+| Run the live bot | Route intraday orders through Zerodha Kite. Review broker state at startup and explicitly arm new entries from the dashboard. |
 
-The paper backend supports persistent cash/share reservations, market/limit orders, cancellation/modification, stops, daily loss halts, journal records, and integer-paise P&L. The replay simulator remains separate from the paper wallet. Research results do not establish future profitability.
+## How it works
 
-## Offline checks
+The TypeScript engine ingests quotes, builds strategy features, and routes approved orders to the paper or broker executor. SQLite records orders, fills, and decisions so trades can be reviewed from signal through exit. The live executor reconciles broker orders and positions at startup and uses persisted submission intents to recover orders by tag when a broker acknowledgement is lost.
 
-Use Node.js 20 or newer and the pinned dependencies.
+## Run the paper demo
+
+Install Node.js 20 or newer and pnpm. From the project folder, run these commands.
 
 ```powershell
 pnpm install
+pnpm paper:demo
+```
+
+Open [DipDaemon on localhost](http://127.0.0.1:8080). The demo uses synthetic quotes and stores its paper account in `data/paper-demo.db`. It runs without credentials or an `.env` file.
+
+## Use Zerodha quotes for paper trading
+
+Create a local `.env` file with these settings. Fill in the three Zerodha values with your own credentials.
+
+```dotenv
+TRADING_MODE=paper
+BROKER=zerodha
+ZERODHA_API_KEY=
+ZERODHA_API_SECRET=
+ZERODHA_ACCESS_TOKEN=
+```
+
+Use `pnpm zerodha:login` for the login and token exchange workflow. Then run `pnpm start` and open the dashboard on port 8080. Keep `.env` and local trading data out of Git. See the [paper trading guide](docs/PAPER_TRADING.md) and the [strategy automation guide](docs/AUTOMATION.md).
+
+## Run the Kite sandbox bot
+
+Run `pnpm zerodha:sandbox login` to get the sandbox login URL. Set `KITE_SANDBOX_REQUEST_TOKEN` from the redirect in your local PowerShell session. Exchange it and start the bot from that same session.
+
+```powershell
+$env:KITE_SANDBOX_ACCESS_TOKEN = node scripts/zerodha-sandbox.mjs exchange
+pnpm zerodha:sandbox positions
+pnpm zerodha:sandbox-bot
+```
+
+Open the [Kite sandbox dashboard](http://127.0.0.1:8082/sandbox.html). The bot starts disarmed and uses a separate database. On startup it checks broker orders and positions against its saved records. If earlier manual sandbox tests left an open order or position, resolve that exposure before arming the bot.
+
+## Connect a live Zerodha account
+
+Start with the Zerodha credentials from the paper setup. Set `TRADING_MODE=live`, `HOST=127.0.0.1`, `OPTIONS_MODE=off`, and `MODEL=jev` in `.env`. Configure your model credentials and run `pnpm auth:token` to create a dashboard token file. Set `AUTH_TOKEN_FILE=.secrets/dashboard-token` in `.env`.
+
+```powershell
+pnpm zerodha:preflight
+pnpm start
+```
+
+The preflight checks broker authentication and reports working orders and open positions. After it succeeds, start the app and open **Live bot controls** from the dashboard sidebar. The bot starts disarmed. Select **Arm live bot** when you intend to allow real-money orders. Arming requires startup reconciliation, fresh quotes, and clear risk checks. Use **Pause new entries** to stop new trades while the bot continues to manage existing positions.
+
+## Verification status
+
+- **Paper trading** was exercised with Zerodha quotes, including manual orders, VWAP approvals, and closed trades in the journal.
+- **Kite sandbox** fills, cancellations, and recovery by order tag were verified individually. The full automated entry, stop, exit, and restart sequence still needs verification against Kite.
+- **Live Zerodha** authentication and the dashboard controls were verified. A real order and fill have yet to be verified.
+
+Run the local checks with:
+
+```powershell
 pnpm typecheck
 pnpm test
 pnpm smoke
 ```
 
-The suite covers observe isolation, both broker clients, paper accounting, restart recovery, failure rollback, and real localhost APIs. Native build approvals for `better-sqlite3` and `esbuild` are explicit. See [baseline results](docs/SAFETY.md#baseline-results) for the original SQLite repair.
+See the [dashboard guide](docs/DASHBOARD.md), [backtesting guide](docs/BACKTESTING.md), [architecture](docs/ARCHITECTURE.md), and [deployment and recovery guide](docs/DEPLOYMENT.md).
 
-## Local startup
 
-No `.env` file is needed for `pnpm paper:demo`. For broker data, create `.env` using the settings in [Paper trading](docs/PAPER_TRADING.md). `pnpm start` defaults to observe and serves the dashboard at `http://127.0.0.1:8080`. Without credentials ordinary startup shows an empty session. With configured credentials the engine reads market data and records decisions. Jev, RSS, and Telegram can also use the network when configured.
-
-For manual paper trading with broker quotes, set `TRADING_MODE=paper`. For a credential-free offline demonstration, run `pnpm paper:demo`. The demo labels synthetic quotes and stores a separate account in `data/paper-demo.db`. See [paper-trading commands](docs/PAPER_TRADING.md) and [enable approval or automatic strategy trading](docs/AUTOMATION.md). Use the browser order ticket, strategy approval/automation controls and journal; see [browser workflow](docs/DASHBOARD.md). Use [Backtesting](docs/BACKTESTING.md) to compare frozen datasets with separate holdout results; synthetic examples are not historical performance. The deterministic strategy requires no model key; the Jev adapter is tested offline but not verified against the real provider.
-
-The dashboard supports access-token authentication and verified backups. Keep the default loopback deployment; see [deployment and recovery](docs/DEPLOYMENT.md) for Docker, secret files and HTTPS proxy requirements. Observe mode does not adopt, manage, or flatten existing broker positions.
-
-## Documentation
-
-- [Deploy, monitor and recover](docs/DEPLOYMENT.md)
-- [Architecture and paper accounting](docs/ARCHITECTURE.md)
-- [Existing features and reuse decisions](docs/EXISTING_FEATURES.md)
-- [Roadmap and file-by-file implementation plan](docs/ROADMAP.md)
-- [Safety audit and baseline results](docs/SAFETY.md)
-- [Operate and verify paper trading](docs/PAPER_TRADING.md)
-- [Approve or automate strategy signals](docs/AUTOMATION.md)
-- [Operate the browser workspace](docs/DASHBOARD.md)
-- [Evaluate strategies and inspect holdout results](docs/BACKTESTING.md)
-
-## Commands
-
-| Command | Behavior |
-| --- | --- |
-| `pnpm start` / `pnpm dev` | Observe scanner, optional paper account, local dashboard |
-| `pnpm paper:demo` | Offline synthetic quotes and persistent paper account |
-| `pnpm typecheck` | Strict TypeScript check |
-| `pnpm test:safety` | Offline mode validation and broker mutation isolation |
-| `pnpm test:paper` | Paper accounting, recovery, API, and demo checks |
-| `pnpm test:backtest` | Evaluation integrity, metrics, holdout, persistence and worker isolation |
-| `pnpm backtest:fixture` | Write a complete labeled synthetic dataset JSON example |
-| `pnpm test:automation` | Strategy rules, AI validation, approvals, scheduling and failure isolation |
-| `pnpm test` | Complete offline test suite including localhost HTTP |
-| `pnpm smoke` | Fixture features, mock ranking, sizing, and governor on a scratch DB |
-| `pnpm replay -- --date YYYY-MM-DD --speed 60` | Historical simulation; may fetch broker candles or call Jev; resets replay records for that date |
-| `pnpm report` / `pnpm gates` | Reports over the configured database |
-| `pnpm probe` | Broker payload inspection with a session |
-| `pnpm calibrate` | Historical feature and model study; may access external services |
-| `pnpm zerodha:login` | Login URL or request-token exchange |
-
-`PAPER_*` settings are validated and documented in the operation guides. Paper fees use dated, configurable flat research estimates, separate from spread/slippage; they are not certified broker charges. The inherited replay cost module remains unchanged. Zerodha is the intended primary broker; the inherited provider default remains Kotak.
-
-## Attribution
-
-Derived from WarrenDuffer by arimanyus. The original MIT license and copyright remain unchanged in [LICENSE](LICENSE). Project repository: [Dip-Daemon](https://github.com/Abhi150904/Dip-Daemon).

@@ -36,6 +36,12 @@ export interface BrokerPosition {
   product: string;
 }
 
+export interface BrokerTrade {
+  id: string;
+  quantity: number;
+  price: number;
+}
+
 export interface MarginCheck {
   available: number;
   required: number;
@@ -90,6 +96,7 @@ export interface Broker {
   }): Promise<unknown>;
   cancel(orderId: string): Promise<unknown>;
   orders(): Promise<BrokerOrder[]>;
+  orderTrades?(orderId: string): Promise<BrokerTrade[]>;
   positions(): Promise<BrokerPosition[]>;
 }
 

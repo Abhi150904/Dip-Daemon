@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import { cfg } from "./config.js";
+import { INDEX_TOKEN } from "./symbols.js";
 import {
   computeStats,
   db,
@@ -36,6 +37,7 @@ import { Backtests } from "./backtest/store.js";
 import { backtestApi } from "./api/backtest.js";
 import { Health } from "./ops/runtime.js";
 import { log } from "./ops/log.js";
+import { sandboxApi } from "./api/sandbox.js";
 
 const clients = new Set<ServerResponse>();
 const clientRequests = new WeakMap<ServerResponse, IncomingMessage>();
@@ -65,6 +67,45 @@ export function startServer(target: Engine | (() => Engine), replay?: ReplayCont
       return reply(res, status, { error: error instanceof PaperError ? error.message : "Access denied" });
     }
     if (health.phase === "stopping") return reply(res, 503, { error: "Service is stopping; retry after restart" });
+    if (engine.liveBot && url.pathname === "/api/live/bot" && req.method === "GET") {
+      const index = engine.quotes.get(INDEX_TOKEN);
+      const age = index ? Date.now() - index.ts : Infinity;
+      const ready = health.snapshot().ready && age >= 0 && age <= cfg.paper.quoteMaxAgeMs && !engine.killed && !engine.halted;
+      return reply(res, 200, { ready, armed: engine.liveEntriesArmed });
+    }
+    if (engine.liveBot && url.pathname === "/api/live/bot/pause" && req.method === "POST") {
+      engine.liveEntriesArmed = false;
+      return reply(res, 200, { armed: false });
+    }
+    if (engine.liveBot && url.pathname === "/api/live/bot/arm" && req.method === "POST") {
+      const index = engine.quotes.get(INDEX_TOKEN);
+      const age = index ? Date.now() - index.ts : Infinity;
+      if (!health.snapshot().ready || age < 0 || age > cfg.paper.quoteMaxAgeMs || engine.killed || engine.halted) {
+        return reply(res, 409, { error: "Live bot requires a reconciled account, fresh market data and clear risk gates." });
+      }
+      engine.liveEntriesArmed = true;
+      return reply(res, 200, { armed: true });
+    }
+    if (url.pathname === "/api/sandbox/bot" && req.method === "GET") {
+      const indexAvailable = engine.quotes.has(INDEX_TOKEN);
+      return reply(res, 200, { available: engine.sandboxBot, ready: health.snapshot().ready && indexAvailable, armed: engine.sandboxEntriesArmed,
+        reason: health.snapshot().ready && !indexAvailable ? "Kite sandbox is not providing a Nifty 50 quote. Arming is locked." : null });
+    }
+    if (url.pathname === "/api/sandbox/bot/arm" && req.method === "POST") {
+      if (!engine.sandboxBot || !health.snapshot().ready || !engine.quotes.has(INDEX_TOKEN) || engine.killed || engine.halted) {
+        return reply(res, 409, { error: "Sandbox bot is unavailable or locked." });
+      }
+      engine.sandboxEntriesArmed = true;
+      return reply(res, 200, { armed: true });
+    }
+    if (url.pathname === "/api/sandbox/bot/pause" && req.method === "POST") {
+      engine.sandboxEntriesArmed = false;
+      return reply(res, 200, { armed: false });
+    }
+    if (!replay && (url.pathname === "/api/sandbox" || url.pathname.startsWith("/api/sandbox/"))) {
+      if (engine.sandboxBot && url.pathname === "/api/sandbox/submit") return reply(res, 409, { error: "Manual submissions are disabled on the sandbox bot server." });
+      void sandboxApi(req, res, url.pathname); return;
+    }
     const system = () => {
       const latestQuote = Math.max(0, ...[...engine.quotes.values()].map(q => q.ts));
       const quoteAgeMs = latestQuote ? Math.max(0, clock.now() - latestQuote) : null;

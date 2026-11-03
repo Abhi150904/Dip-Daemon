@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kite sandbox · DipDaemon</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/sandbox.js"></script>
+</head>
+<body>
+  <main class="login">
+    <a href="/">Back to DipDaemon</a>
+    <h1>Kite sandbox</h1>
+    <p>Demo orders use Kite’s sandbox account.</p>
+    <section class="panel section-gap" id="sandbox-bot" hidden>
+      <div class="panel-head"><h2>Automated sandbox bot</h2></div>
+      <div class="panel-body">
+        <p>Demo stops run inside DipDaemon and require it to stay connected.</p>
+        <p id="bot-status" role="status"></p>
+        <button class="button primary" type="button" id="arm-bot" disabled>Arm sandbox bot</button>
+        <button class="button secondary" type="button" id="pause-bot" disabled>Pause new entries</button>
+      </div>
+    </section>
+    <section class="panel section-gap">
+      <div class="panel-head"><h2>Buy limit</h2></div>
+      <form class="panel-body" id="sandbox-order">
+        <fieldset id="ticket-fields" disabled>
+          <div class="field"><label for="symbol">NSE symbol</label><input id="symbol" required maxlength="30" value="HDFCBANK"></div>
+          <div class="field"><label for="price">Limit price in INR</label><input id="price" type="number" min="0.01" step="0.01" required></div>
+          <div class="field"><label for="quantity">Shares</label><input id="quantity" type="number" min="1" max="10" value="1" required></div>
+          <button class="button primary">Submit sandbox buy</button>
+        </fieldset>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Order recovery</h2></div>
+      <div class="panel-body">
+        <form id="recover-order" class="field"><label for="tag">Submission tag</label><input id="tag" required pattern="dd[a-f0-9]{16}"><button class="button secondary">Check status and fills</button></form>
+        <button class="button secondary" id="cancel-order" type="button" disabled>Request sandbox cancellation</button>
+        <p class="section-gap" id="sandbox-status" role="status">Checking sandbox configuration…</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

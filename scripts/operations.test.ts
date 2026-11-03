@@ -114,8 +114,8 @@ test("configured secrets and credentials are redacted from errors", () => {
 test("real service process shuts down, restarts with the same account and exits nonzero on fatal errors", async () => {
   const dir = mkdtempSync(join(tmpdir(), "dipdaemon-process-")), dbPath = join(dir, "service.db");
   const env = { ...process.env, DB_PATH: dbPath, KILL_PATH: join(dir, "kill"), BACKUP_DIR: join(dir, "backups"), AUTH_TOKEN: token, AUTH_TOKEN_FILE: "", APP_ORIGIN: "", HOST: "127.0.0.1", PORT: "0", TRADING_MODE: "paper", MODEL: "mock", KOTAK_ACCESS_TOKEN: "", KOTAK_UCC: "", ZERODHA_API_KEY: "", ZERODHA_ACCESS_TOKEN: "", RSS_FEEDS: "", TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "", PAPER_AUTOMATION_MODE: "off" };
-  const boot = async () => {
-    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", 'await import("./src/main.ts"); process.on("message", m => { if(m === "stop") process.emit("SIGTERM"); if(m === "crash") setImmediate(() => {throw new Error("test fatal");}); });'], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  const boot = async (sandboxToken = "") => {
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", 'await import("./src/main.ts"); process.on("message", m => { if(m === "stop") process.emit("SIGTERM"); if(m === "crash") setImmediate(() => {throw new Error("test fatal");}); });'], { env: { ...env, KITE_SANDBOX_ACCESS_TOKEN: sandboxToken }, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] });
     let output = "";
     assert.ok(child.stdout && child.stderr);
     child.stdout.on("data", chunk => { output += String(chunk); }); child.stderr.on("data", chunk => { output += String(chunk); });
@@ -128,6 +128,9 @@ test("real service process shuts down, restarts with the same account and exits 
     assert.equal((await fetch(`${current.base}/login`)).headers.get("referrer-policy"), "same-origin");
     assert.equal((await fetch(`${current.base}/api/paper/account`)).status, 401);
     const headers = { Authorization: `Bearer ${token}` };
+    assert.equal((await fetch(`${current.base}/api/sandbox`)).status, 401);
+    assert.deepEqual(await (await fetch(`${current.base}/api/sandbox`, { headers })).json(), { enabled: false });
+    assert.equal((await fetch(`${current.base}/api/sandbox/submit`, { method: "POST", headers })).status, 409);
     const before: unknown = await (await fetch(`${current.base}/api/paper/account`, { headers })).json();
     const signIn = await fetch(`${current.base}/auth/login`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }), redirect: "manual" });
     const cookie = signIn.headers.get("set-cookie")?.split(";")[0]; assert.ok(cookie);
@@ -137,7 +140,13 @@ test("real service process shuts down, restarts with the same account and exits 
     while (!(await reader.read()).done) { /* Existing streams must close after session revocation. */ }
     const exit = once(current.child, "exit"); current.child.send("stop"); assert.equal((await exit)[0], 0);
     assert.match(current.output(), /shutdown_complete/);
-    current = await boot();
+    current = await boot("sandbox-test-token");
+    assert.deepEqual(await (await fetch(`${current.base}/api/sandbox`, { headers })).json(), { enabled: true });
+    assert.equal((await fetch(`${current.base}/sandbox.html`, { headers })).status, 200);
+    assert.equal((await fetch(`${current.base}/api/sandbox/submit`, {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: "INFY", price: 100, quantity: 11, tag: "dd0123456789abcdef" }),
+    })).status, 422);
     const after: unknown = await (await fetch(`${current.base}/api/paper/account`, { headers })).json();
     assert.deepEqual(after, before);
     assert.equal((await fetch(`${current.base}/healthz`)).status, 200);
